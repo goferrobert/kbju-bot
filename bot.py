@@ -37,4 +37,21 @@ application.add_handler(conv_handler)
 
 # Webhook endpoint
 @app.post(f"/webhook/{WEBHOOK_SECRET}")
-async def
+async def telegram_webhook(update: dict):
+    await application.update_queue.put(Update.de_json(update, application.bot))
+    return {"status": "ok"}
+
+# Запуск Telegram Application при старте FastAPI
+@app.on_event("startup")
+async def on_startup():
+    await application.initialize()
+    await application.start()
+  # Устанавливаем Webhook при старте
+    webhook_url = f"https://telegram-patient-rain-1293.fly.dev/webhook/{WEBHOOK_SECRET}"
+    await application.bot.set_webhook(url=webhook_url)
+    print(f"✅ Webhook установлен: {webhook_url}")
+
+# Остановка Telegram Application при выключении FastAPI
+@app.on_event("shutdown")
+async def on_shutdown():
+    await application.stop()

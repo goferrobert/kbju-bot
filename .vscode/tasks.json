@@ -2,28 +2,28 @@
     "version": "2.0.0",
     "tasks": [
         {
-            "label": "Deploy to Fly.io",
+            "label": "Commit + Deploy + Backup",
             "type": "shell",
-            "command": "flyctl deploy",
+            "command": "${workspaceFolder}\\deploy_all_with_backup.bat",
             "group": {
                 "kind": "build",
                 "isDefault": true
             },
-            "problemMatcher": [],
-            "options": {
-                "cwd": "${workspaceFolder}"
-            }
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": false,
+                "panel": "shared"
+            },
+            "problemMatcher": []
         },
         {
             "label": "Run Dev Bot",
             "type": "shell",
-            "command": "python",
-            "args": [
-                "bot.py"
-            ],
-            "options": {
-                "cwd": "${workspaceFolder}",
-                "envFile": "${workspaceFolder}/.env"
+            "command": "${workspaceFolder}\\run_dev.bat",
+            "group": {
+                "kind": "test",
+                "isDefault": true
             },
             "presentation": {
                 "echo": true,

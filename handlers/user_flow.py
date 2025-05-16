@@ -1,37 +1,58 @@
-from telegram import ReplyKeyboardMarkup, ReplyKeyboardRemove
+from telegram import ReplyKeyboardMarkup, ReplyKeyboardRemove, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ConversationHandler
 from services.calculator import calculate_kbju
 from funnel.invite import send_consultation_invite
 
 GENDER, WEIGHT, HEIGHT, AGE, ACTIVITY, TARGET = range(6)
 
+main_menu_keyboard = InlineKeyboardMarkup([
+    [InlineKeyboardButton("🔢 Хочу получить расчёт своего КБЖУ", callback_data="start_kbju")]
+])
+
 async def start(update, context):
-    keyboard = [["Хочу получить расчёт своего КБЖУ"]]
-    markup = ReplyKeyboardMarkup(keyboard, one_time_keyboard=True, resize_keyboard=True)
     await update.message.reply_text(
         "Добро пожаловать! Этот бот создан для расчёта КБЖУ, поехали!",
-        reply_markup=markup
+        reply_markup=main_menu_keyboard
+    )
+    return ConversationHandler.END
+
+async def handle_start_kbju(update, context):
+    print("🚀 handle_start_kbju вызван")
+    await update.callback_query.answer()
+    sex_keyboard = InlineKeyboardMarkup([
+        [InlineKeyboardButton("🚹 Мужчина", callback_data="sex_male"),
+         InlineKeyboardButton("🚺 Женщина", callback_data="sex_female")]
+    ])
+    await update.callback_query.message.reply_text(
+        "Выберите ваш пол:",
+        reply_markup=sex_keyboard
     )
     return GENDER
 
-async def get_gender(update, context):
-    keyboard = [["Мужчина", "Женщина"]]
-    markup = ReplyKeyboardMarkup(keyboard, one_time_keyboard=True, resize_keyboard=True)
-    text = update.message.text.lower()
-    if "муж" in text:
+async def handle_sex_selection(update, context):
+    await update.callback_query.answer()
+    data = update.callback_query.data
+
+    if data == "sex_male":
         context.user_data["sex"] = "мужчина"
-    elif "жен" in text:
+        sex_label = "🚹 Мужчина"
+    elif data == "sex_female":
         context.user_data["sex"] = "женщина"
-    else:
-        await update.message.reply_text("Пожалуйста, выбери: мужчина или женщина.", reply_markup=markup)
-        return GENDER
-    await update.message.reply_text(
-        "Введите ваш вес в килограммах (кг) ⚖️\nНапример: 68.5",
-        reply_markup=ReplyKeyboardRemove()
+        sex_label = "🚺 Женщина"
+
+    # подтверждение выбора
+    await update.callback_query.message.reply_text(f"Вы выбрали: {sex_label} ✅")
+
+    # далее — следующий шаг
+    await update.callback_query.message.reply_text(
+        "Введите ваш вес в килограммах (кг) ⚖️\nНапример: 68.5"
     )
     return WEIGHT
 
+
 async def get_weight(update, context):
+
+    print("⚖️ get_weight вызван:", update.message.text)
     try:
         context.user_data["weight"] = float(update.message.text)
         await update.message.reply_text("Введите ваш рост в сантиметрах (см) 📏\nНапример: 172")
@@ -52,18 +73,26 @@ async def get_height(update, context):
 async def get_age(update, context):
     try:
         context.user_data["age"] = int(update.message.text)
-        keyboard = [["1", "2", "3", "4", "5"]]
-        markup = ReplyKeyboardMarkup(keyboard, one_time_keyboard=True, resize_keyboard=True)
+
+        activity_keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton("1️⃣", callback_data="activity_1"),
+             InlineKeyboardButton("2️⃣", callback_data="activity_2"),
+             InlineKeyboardButton("3️⃣", callback_data="activity_3")],
+            [InlineKeyboardButton("4️⃣", callback_data="activity_4"),
+             InlineKeyboardButton("5️⃣", callback_data="activity_5")]
+        ])
+
         await update.message.reply_text(
-            "Выбери уровень физической активности (введи цифру от 1 до 5): 🏃‍♀️\n\n"
+            "Выбери уровень физической активности (нажми на кнопку): 🏃‍♀️\n\n"
             "1️⃣ — Минимальный\nпочти нет активности, сидячая работа, редкие прогулки\n\n"
             "2️⃣ — Лёгкий\n1–3 тренировки в неделю, лёгкая подвижность\n\n"
             "3️⃣ — Средний\n3–5 тренировок в неделю, регулярная активность\n\n"
             "4️⃣ — Высокий\nинтенсивные тренировки почти каждый день\n\n"
             "5️⃣ — Очень высокий\nежедневные тренировки или тяжёлый физический труд",
-            reply_markup=markup
+            reply_markup=activity_keyboard
         )
         return ACTIVITY
+
     except ValueError:
         await update.message.reply_text("Пожалуйста, введите возраст числом:")
         return AGE
@@ -84,16 +113,37 @@ async def get_activity(update, context):
         return ACTIVITY
 
 async def get_target(update, context):
-    # сначала пробуем распарсить число
     try:
         target = float(update.message.text)
     except ValueError:
         await update.message.reply_text("Пожалуйста, введи целевой вес числом:")
         return TARGET
 
-    # дальше — гарантированно расчёт и завершение
     context.user_data["target_weight"] = target
     result = calculate_kbju(context.user_data)
     await update.message.reply_text(result)
     await send_consultation_invite(update, context)
     return ConversationHandler.END
+
+async def handle_activity_selection(update, context):
+    await update.callback_query.answer()
+    data = update.callback_query.data
+    level = int(data.split("_")[1])
+    context.user_data["activity"] = level
+
+    # краткое описание активности
+    activity_labels = {
+        1: "1️⃣ — Минимальный",
+        2: "2️⃣ — Лёгкий",
+        3: "3️⃣ — Средний",
+        4: "4️⃣ — Высокий",
+        5: "5️⃣ — Очень высокий"
+    }
+
+    label = activity_labels.get(level, f"{level}")
+    await update.callback_query.message.reply_text(f"Вы выбрали уровень активности: {label} ✅")
+
+    await update.callback_query.message.reply_text(
+        "Теперь введи свой целевой вес (в кг) 🎯\nНапример: 60"
+    )
+    return TARGET

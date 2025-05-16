@@ -15,8 +15,8 @@ git push
 
 echo 💾 Создание бэкапа
 set "datetime=%DATE:~6,4%-%DATE:~3,2%-%DATE:~0,2%_%TIME:~0,2%%TIME:~3,2%%TIME:~6,2%"
-set "datetime=%datetime: =0%"
-powershell Compress-Archive -Path * -DestinationPath backups\backup_%datetime%.zip
+set "datetime=%datetime: =0%_%RANDOM%"
+powershell Compress-Archive -Path * -DestinationPath "backups\backup_%datetime%.zip"
 
 echo 🚀 Деплой на Fly.io
 flyctl deploy

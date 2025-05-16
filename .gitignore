@@ -1,0 +1,19 @@
+# Виртуальные окружения
+venv/
+env/
+__pycache__/
+*.pyc
+
+# Настройки редактора
+.vscode/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Python-специфичное
+*.log
+
+# Секреты
+*.env
+*.token

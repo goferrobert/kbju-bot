@@ -13,6 +13,25 @@
             "options": {
                 "cwd": "${workspaceFolder}"
             }
+        },
+        {
+            "label": "Run Dev Bot",
+            "type": "shell",
+            "command": "python",
+            "args": [
+                "bot.py"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}",
+                "envFile": "${workspaceFolder}/.env"
+            },
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": false,
+                "panel": "shared"
+            },
+            "problemMatcher": []
         }
     ]
 }

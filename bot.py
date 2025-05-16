@@ -1,4 +1,5 @@
 import os
+IS_PROD = os.getenv("IS_PROD", "false").lower() == "true"
 from fastapi import FastAPI, Request
 from telegram import Update, Bot
 from telegram.ext import Application, ApplicationBuilder, ContextTypes, CommandHandler, MessageHandler, ConversationHandler, filters
@@ -36,22 +37,24 @@ conv_handler = ConversationHandler(
 application.add_handler(conv_handler)
 
 # Webhook endpoint
-@app.post(f"/webhook/{WEBHOOK_SECRET}")
-async def telegram_webhook(update: dict):
-    await application.update_queue.put(Update.de_json(update, application.bot))
-    return {"status": "ok"}
+if IS_PROD:
+    @app.post(f"/webhook/{WEBHOOK_SECRET}")
+    async def telegram_webhook(update: dict):
+        await application.update_queue.put(Update.de_json(update, application.bot))
+        return {"status": "ok"}
 
-# Запуск Telegram Application при старте FastAPI
-@app.on_event("startup")
-async def on_startup():
-    await application.initialize()
-    await application.start()
-  # Устанавливаем Webhook при старте
-    webhook_url = f"https://telegram-patient-rain-1293.fly.dev/webhook/{WEBHOOK_SECRET}"
-    await application.bot.set_webhook(url=webhook_url)
-    print(f"✅ Webhook установлен: {webhook_url}")
+    @app.on_event("startup")
+    async def on_startup():
+        await application.initialize()
+        await application.start()
+        webhook_url = f"https://telegram-patient-rain-1293.fly.dev/webhook/{WEBHOOK_SECRET}"
+        await application.bot.set_webhook(url=webhook_url)
+        print(f"✅ Webhook установлен: {webhook_url}")
 
-# Остановка Telegram Application при выключении FastAPI
-@app.on_event("shutdown")
-async def on_shutdown():
-    await application.stop()
+    @app.on_event("shutdown")
+    async def on_shutdown():
+        await application.stop()
+
+if not IS_PROD:
+    if __name__ == "__main__":
+        application.run_polling()

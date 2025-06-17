@@ -18,19 +18,20 @@
             "problemMatcher": []
         },
         {
-            "label": "Run Dev Bot",
+            "label": "Run Dev Bot + Auto Git Push",
             "type": "shell",
-            "command": "cmd",
+            "command": "powershell",
             "args": [
-                "/c",
-                "core\\run_dev.bat"
+                "-NoProfile",
+                "-Command",
+                "& { core\\run_dev.bat; if (-not (git diff --quiet)) { $changes = git diff --name-only | Select-Object -First 5; if ($changes) { $date = Get-Date -Format \"yyyy-MM-dd HH:mm:ss\"; $msg = \"auto: files updated [$date]\"; git add .; git commit -m $msg; git push } } }"
             ],
             "options": {
                 "cwd": "${workspaceFolder}"
             },
             "group": {
-                "kind": "test",
-                "isDefault": true
+                "kind": "build",
+                "isDefault": false
             },
             "presentation": {
                 "echo": true,

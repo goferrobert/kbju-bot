@@ -5,225 +5,397 @@ from telegram.ext import (
 )
 from datetime import datetime
 
-from app.db.crud import get_user_by_telegram_id, create_user
-from app.db.record_utils import get_or_create_today_record
-from app.modules.kbju import calculate_kbju
-from app.modules.bodyfat import NECK, handle_neck
-from app.modules.my_data import show_user_summary
-from app.modules.invite import send_consultation_invite
-from app.db.session import SessionLocal
+from app.handlers.base import BaseHandler
+from app.handlers.fsm_states import UserStates
+from app.db.models import User, UserRecord
+from app.utils.validation import ValidationError
+from app.utils.logging import get_logger
 
-# Константы состояний анкеты пользователя (дублируем напрямую, чтобы избежать циклического импорта)
-BASIC_NAME, BASIC_BIRTHDAY, BASIC_HEIGHT, BASIC_SEX = range(100, 104)
-FIRST_TOUCH_WEIGHT, STEP_COUNT, SPORT_YN, SPORT_TYPE, SPORT_FREQ, FIRST_TOUCH_WAIST = range(900, 906)
-GOAL_SELECT = 913
+logger = get_logger(__name__)
 
-async def start_first_touch(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    telegram_id = update.effective_user.id
-    user = get_user_by_telegram_id(telegram_id)
+class FirstTouchHandler(BaseHandler):
+    """Handler for first user interaction."""
 
-    if user:
-        await update.message.reply_text("⚠️ <b>Ты уже зарегистрирован.</b> Напиши /menu, чтобы продолжить.", parse_mode="HTML")
+    STEP_LEVELS = {
+        "low": "Менее 5000 шагов",
+        "medium": "5000-10000 шагов",
+        "high": "Более 10000 шагов"
+    }
+
+    SPORT_TYPES = {
+        "yoga": ("Йога / Пилатес", 1.05),
+        "cardio": ("Бег / Кардио", 1.10),
+        "fitness": ("Фитнес / Зал", 1.20),
+        "hiit": ("Кроссфит / HIIT", 1.30)
+    }
+
+    def __init__(self):
+        super().__init__()
+        self.handler = ConversationHandler(
+            entry_points=[CommandHandler("start", self.start_first_touch)],
+            states={
+                UserStates.WAITING_FOR_NAME: [
+                    MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_name)
+                ],
+                UserStates.WAITING_FOR_BIRTHDAY: [
+                    MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_birthday)
+                ],
+                UserStates.WAITING_FOR_HEIGHT: [
+                    MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_height)
+                ],
+                UserStates.WAITING_FOR_SEX: [
+                    CallbackQueryHandler(self.handle_sex, pattern="^sex_")
+                ],
+                UserStates.WAITING_FOR_WEIGHT: [
+                    MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_weight)
+                ],
+                UserStates.WAITING_FOR_STEPS: [
+                    CallbackQueryHandler(self.handle_steps, pattern="^steps_")
+                ],
+                UserStates.WAITING_FOR_SPORT_YN: [
+                    CallbackQueryHandler(self.handle_sport_yn, pattern="^sport_")
+                ],
+                UserStates.WAITING_FOR_SPORT_TYPE: [
+                    CallbackQueryHandler(self.handle_sport_type, pattern="^sport_")
+                ],
+                UserStates.WAITING_FOR_SPORT_FREQ: [
+                    MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_sport_freq)
+                ],
+                UserStates.WAITING_FOR_WAIST: [
+                    MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_waist)
+                ],
+                UserStates.WAITING_FOR_GOAL: [
+                    CallbackQueryHandler(self.handle_goal, pattern="^goal_")
+                ]
+            },
+            fallbacks=[]
+        )
+
+    @BaseHandler.handle_errors
+    async def start_first_touch(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+        """Start first interaction with user."""
+        user = await self.get_user(update.effective_user.id)
+        if user:
+            await self.send_message(update, "🎉 Поздравляю, ты уже зарегистрирован!")
+            from app.ui.menu import send_main_menu
+            await send_main_menu(update, context)
+            return ConversationHandler.END
+
+        if not update.effective_user.username:
+            await self.send_message(
+                update,
+                "❌ Для регистрации необходимо установить username в Telegram."
+            )
+            return ConversationHandler.END
+
+        await self.send_message(
+            update,
+            "👋 <b>Привет!</b> Сейчас мы пройдём анкету. Это займёт не больше 1 минуты!",
+            parse_mode="HTML"
+        )
+        await self.send_message(
+            update,
+            "👋 Давай начнём с основного.\nКак тебя зовут? (ФИО или просто имя)",
+            parse_mode="HTML"
+        )
+        return UserStates.WAITING_FOR_NAME
+
+    @BaseHandler.handle_errors
+    async def handle_name(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+        """Handle name input."""
+        try:
+            name = update.message.text.strip()
+            if not name or len(name) < 2:
+                raise ValidationError("Имя должно содержать минимум 2 символа")
+
+            self.set_user_data(context, "name", name)
+            await self.send_message(
+                update,
+                "📅 Введи дату рождения (дд.мм.гггг):"
+            )
+            return UserStates.WAITING_FOR_BIRTHDAY
+        except ValidationError as e:
+            await self.send_message(update, f"❌ {str(e)}")
+            return UserStates.WAITING_FOR_NAME
+
+    @BaseHandler.handle_errors
+    async def handle_birthday(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+        """Handle birthday input."""
+        try:
+            birthday = datetime.strptime(update.message.text.strip(), "%d.%m.%Y").date()
+            if birthday > datetime.now().date():
+                raise ValidationError("Дата рождения не может быть в будущем")
+
+            self.set_user_data(context, "birthday", birthday)
+            await self.send_message(
+                update,
+                "📏 Введи свой рост (в см):"
+            )
+            return UserStates.WAITING_FOR_HEIGHT
+        except ValueError:
+            await self.send_message(
+                update,
+                "❌ Введите дату в формате дд.мм.гггг"
+            )
+            return UserStates.WAITING_FOR_BIRTHDAY
+        except ValidationError as e:
+            await self.send_message(update, f"❌ {str(e)}")
+            return UserStates.WAITING_FOR_BIRTHDAY
+
+    @BaseHandler.handle_errors
+    async def handle_height(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+        """Handle height input."""
+        try:
+            height = float(update.message.text.strip())
+            if not 100 <= height <= 250:
+                raise ValidationError("Рост должен быть от 100 до 250 см")
+
+            self.set_user_data(context, "height", height)
+            keyboard = InlineKeyboardMarkup([
+                [InlineKeyboardButton("Мужской", callback_data="sex_male")],
+                [InlineKeyboardButton("Женский", callback_data="sex_female")]
+            ])
+            await self.send_message(
+                update,
+                "👤 Выберите пол:",
+                reply_markup=keyboard
+            )
+            return UserStates.WAITING_FOR_SEX
+        except ValueError:
+            await self.send_message(
+                update,
+                "❌ Введите корректное число"
+            )
+            return UserStates.WAITING_FOR_HEIGHT
+        except ValidationError as e:
+            await self.send_message(update, f"❌ {str(e)}")
+            return UserStates.WAITING_FOR_HEIGHT
+
+    @BaseHandler.handle_errors
+    async def handle_sex(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+        """Handle sex selection."""
+        query = update.callback_query
+        await query.answer()
+
+        sex = query.data.split("_")[1]
+        self.set_user_data(context, "sex", sex)
+
+        await self.send_message(
+            update,
+            "⚖️ Введи свой вес в кг (например: 72.5):"
+        )
+        return UserStates.WAITING_FOR_WEIGHT
+
+    @BaseHandler.handle_errors
+    async def handle_weight(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+        """Handle weight input."""
+        try:
+            weight = float(update.message.text.strip())
+            if not 30 <= weight <= 300:
+                raise ValidationError("Вес должен быть от 30 до 300 кг")
+
+            self.set_user_data(context, "weight", weight)
+
+            keyboard = InlineKeyboardMarkup([
+                [InlineKeyboardButton(level, callback_data=f"steps_{level_id}")]
+                for level_id, level in self.STEP_LEVELS.items()
+            ])
+            await self.send_message(
+                update,
+                "📍 Сколько шагов вы проходите в день?",
+                reply_markup=keyboard
+            )
+            return UserStates.WAITING_FOR_STEPS
+        except ValueError:
+            await self.send_message(
+                update,
+                "❌ Введите корректное число"
+            )
+            return UserStates.WAITING_FOR_WEIGHT
+        except ValidationError as e:
+            await self.send_message(update, f"❌ {str(e)}")
+            return UserStates.WAITING_FOR_WEIGHT
+
+    @BaseHandler.handle_errors
+    async def handle_steps(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+        """Handle steps selection."""
+        query = update.callback_query
+        await query.answer()
+
+        step_level = query.data.split("_")[1]
+        self.set_user_data(context, "step_level", step_level)
+
+        keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton("✅ Да", callback_data="sport_yes")],
+            [InlineKeyboardButton("❌ Нет", callback_data="sport_no")]
+        ])
+        await self.send_message(
+            update,
+            "🏋️ Занимаетесь ли вы спортом?",
+            reply_markup=keyboard
+        )
+        return UserStates.WAITING_FOR_SPORT_YN
+
+    @BaseHandler.handle_errors
+    async def handle_sport_yn(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+        """Handle sport yes/no selection."""
+        query = update.callback_query
+        await query.answer()
+
+        if query.data == "sport_no":
+            self.set_user_data(context, "sport_type", "none")
+            self.set_user_data(context, "sport_freq", 0)
+            return await self.ask_waist(update, context)
+
+        keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton(desc, callback_data=f"sport_{type_}")]
+            for type_, (desc, _) in self.SPORT_TYPES.items()
+        ])
+        await self.send_message(
+            update,
+            "💪 Какие тренировки вы выполняете?",
+            reply_markup=keyboard
+        )
+        return UserStates.WAITING_FOR_SPORT_TYPE
+
+    @BaseHandler.handle_errors
+    async def handle_sport_type(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+        """Handle sport type selection."""
+        query = update.callback_query
+        await query.answer()
+
+        sport_type = query.data.split("_")[1]
+        self.set_user_data(context, "sport_type", sport_type)
+        self.set_user_data(context, "sport_multiplier", self.SPORT_TYPES[sport_type][1])
+
+        await self.send_message(
+            update,
+            "📅 Сколько раз в неделю вы тренируетесь? (1-7)"
+        )
+        return UserStates.WAITING_FOR_SPORT_FREQ
+
+    @BaseHandler.handle_errors
+    async def handle_sport_freq(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+        """Handle sport frequency input."""
+        try:
+            freq = int(update.message.text.strip())
+            if not 1 <= freq <= 7:
+                raise ValidationError("Частота должна быть от 1 до 7 раз в неделю")
+
+            self.set_user_data(context, "sport_freq", freq)
+            return await self.ask_waist(update, context)
+        except ValueError:
+            await self.send_message(
+                update,
+                "❌ Введите целое число"
+            )
+            return UserStates.WAITING_FOR_SPORT_FREQ
+        except ValidationError as e:
+            await self.send_message(update, f"❌ {str(e)}")
+            return UserStates.WAITING_FOR_SPORT_FREQ
+
+    @BaseHandler.handle_errors
+    async def ask_waist(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+        """Ask for waist measurement."""
+        await self.send_message(
+            update,
+            "📏 Введи обхват талии (в см):"
+        )
+        return UserStates.WAITING_FOR_WAIST
+
+    @BaseHandler.handle_errors
+    async def handle_waist(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+        """Handle waist measurement input."""
+        try:
+            waist = float(update.message.text.strip())
+            if not 50 <= waist <= 200:
+                raise ValidationError("Обхват талии должен быть от 50 до 200 см")
+
+            self.set_user_data(context, "waist", waist)
+
+            keyboard = InlineKeyboardMarkup([
+                [InlineKeyboardButton("Нормальное тело", callback_data="goal_normal")],
+                [InlineKeyboardButton("Спортивное тело", callback_data="goal_athletic")],
+                [InlineKeyboardButton("Сухое тело", callback_data="goal_lean")]
+            ])
+            await self.send_message(
+                update,
+                "🎯 Выберите вашу цель:",
+                reply_markup=keyboard
+            )
+            return UserStates.WAITING_FOR_GOAL
+        except ValueError:
+            await self.send_message(
+                update,
+                "❌ Введите корректное число"
+            )
+            return UserStates.WAITING_FOR_WAIST
+        except ValidationError as e:
+            await self.send_message(update, f"❌ {str(e)}")
+            return UserStates.WAITING_FOR_WAIST
+
+    @BaseHandler.handle_errors
+    async def handle_goal(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+        """Handle goal selection and finalize registration."""
+        query = update.callback_query
+        await query.answer()
+
+        goal = query.data.split("_")[1]
+        goal_map = {
+            "normal": "Нормальное тело",
+            "athletic": "Спортивное тело",
+            "lean": "Сухое тело"
+        }
+        self.set_user_data(context, "goal", goal_map[goal])
+
+        # Создаем пользователя
+        user = User(
+            telegram_id=update.effective_user.id,
+            username=update.effective_user.username,
+            name=self.get_user_data(context, "name"),
+            sex=self.get_user_data(context, "sex"),
+            date_of_birth=self.get_user_data(context, "birthday"),
+            height=self.get_user_data(context, "height"),
+            goal=self.get_user_data(context, "goal")
+        )
+        self.session.add(user)
+        await self.session.commit()
+
+        # Создаем первую запись
+        record = UserRecord(
+            user_id=user.id,
+            weight=self.get_user_data(context, "weight"),
+            waist=self.get_user_data(context, "waist"),
+            step_level=self.get_user_data(context, "step_level"),
+            sport_type=self.get_user_data(context, "sport_type"),
+            sport_freq=self.get_user_data(context, "sport_freq")
+        )
+        self.session.add(record)
+        await self.session.commit()
+
+        # Рассчитываем КБЖУ
+        from app.modules.kbju import KBJUHandler
+        kbju_handler = KBJUHandler()
+        await kbju_handler.calculate_kbju(update, context, user, record)
+
+        # Рассчитываем процент жира
+        from app.modules.bodyfat import BodyFatHandler
+        bodyfat_handler = BodyFatHandler()
+        await bodyfat_handler.calculate_bodyfat(update, context, user, record)
+
+        # Показываем сводку
+        from app.modules.my_data import MyDataHandler
+        my_data_handler = MyDataHandler()
+        await my_data_handler.show_user_summary(update, context)
+
+        # Отправляем приглашение на консультацию
+        from app.modules.invite import InviteHandler
+        invite_handler = InviteHandler()
+        await invite_handler.send_consultation_invite(update, context)
+
         return ConversationHandler.END
 
-    context.user_data["flow"] = "first_touch"
-    await update.message.reply_text(
-        "👋 <b>Привет!</b> Сейчас мы пройдём анкету. Это займёт не больше 1 минуты!",
-        parse_mode="HTML"
-    )
-    await update.message.reply_text("👋 Давай начнём с основного.\nКак тебя зовут? (ФИО или просто имя)", parse_mode="HTML")
-    return BASIC_NAME
-
-async def after_form_finished(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    message = update.message or update.callback_query.message
-    telegram_id = update.effective_user.id
- 
-  # Импортировать: from app.db.crud import create_user
- 
-    name = context.user_data["name"]
-    birthday = context.user_data["birthday"]
-    height = context.user_data["height"]
-    sex = context.user_data["sex"]
-
-    user = create_user(telegram_id, name, birthday, height, sex)
-    context.user_data["user"] = user
-
-    await message.reply_text("⚖️ <b>Введи свой вес</b> в кг (например: 72.5):", parse_mode="HTML")
-    return FIRST_TOUCH_WEIGHT
-
-async def handle_first_touch_weight(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    try:
-        weight = float(update.message.text.strip())
-        if not 30 <= weight <= 300:
-            raise ValueError
-        context.user_data["weight"] = weight
-    except ValueError:
-        await update.message.reply_text("❌ Введите <b>реалистичный вес</b> от 30 до 300 кг.", parse_mode="HTML")
-        return FIRST_TOUCH_WEIGHT
-
-    keyboard = InlineKeyboardMarkup([
-        [InlineKeyboardButton("🚶 0–3000", callback_data="steps_1"),
-         InlineKeyboardButton("🚶‍♂️ 3000–7000", callback_data="steps_2")],
-        [InlineKeyboardButton("🚶‍♀️ 7000–10000", callback_data="steps_3"),
-         InlineKeyboardButton("🏃 10000–15000", callback_data="steps_4")],
-        [InlineKeyboardButton("🏃‍♂️ 15000+", callback_data="steps_5")]
-    ])
-    msg = update.message or update.callback_query.message
-    await msg.reply_text(
-        "📍 <b>Сколько шагов вы проходите в день?</b>\n\n👇 Выберите вариант:",
-        reply_markup=keyboard,
-        parse_mode="HTML"
-    )
-    return STEP_COUNT
-
-async def handle_steps_selection(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.callback_query.answer()
-    level = int(update.callback_query.data.split("_")[1])
-    step_multiplier = {1: 1.2, 2: 1.3, 3: 1.4, 4: 1.5, 5: 1.6}.get(level, 1.3)
-    context.user_data["step_level"] = level
-    context.user_data["step_multiplier"] = step_multiplier
-    await update.callback_query.message.reply_text(
-        "🏋️ <b>Занимаетесь ли вы спортом?</b>",
-        reply_markup=InlineKeyboardMarkup([
-            [InlineKeyboardButton("✅ Да", callback_data="sport_yes"),
-             InlineKeyboardButton("❌ Нет", callback_data="sport_no")]
-        ]),
-        parse_mode="HTML"
-    )
-    return SPORT_YN
-
-async def handle_sport_yn(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.callback_query.answer()
-    if update.callback_query.data == "sport_no":
-        context.user_data["sport_type"] = "нет"
-        context.user_data["sport_freq"] = 0
-        context.user_data["sport_multiplier"] = 1.0
-        return await ask_waist(update, context)
-
-    keyboard = InlineKeyboardMarkup([
-        [InlineKeyboardButton("🧘 Йога / Пилатес", callback_data="sport_yoga")],
-        [InlineKeyboardButton("🏃 Бег / Кардио", callback_data="sport_cardio")],
-        [InlineKeyboardButton("🏋️ Фитнес / Зал", callback_data="sport_fitness")],
-        [InlineKeyboardButton("🥵 Кроссфит / HIIT", callback_data="sport_hiit")]
-    ])
-    await update.callback_query.message.reply_text(
-        "💪 <b>Какие тренировки вы выполняете?</b>",
-        reply_markup=keyboard,
-        parse_mode="HTML"
-    )
-    return SPORT_TYPE
-
-async def handle_sport_type(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.callback_query.answer()
-    type_map = {
-        "sport_yoga": 1.05,
-        "sport_cardio": 1.10,
-        "sport_fitness": 1.20,
-        "sport_hiit": 1.30
-    }
-    context.user_data["sport_type"] = update.callback_query.data
-    context.user_data["sport_multiplier"] = type_map[update.callback_query.data]
-    await update.callback_query.message.reply_text("📅 <b>Сколько раз в неделю вы тренируетесь?</b> (1–7)", parse_mode="HTML")
-    return SPORT_FREQ
-
-async def handle_sport_freq(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    try:
-        freq = int(update.message.text.strip())
-        if not 1 <= freq <= 7:
-            raise ValueError
-        freq_scale = freq / 7.0
-        context.user_data["sport_freq"] = freq
-        context.user_data["sport_multiplier"] *= freq_scale
-    except ValueError:
-        await update.message.reply_text("❌ Введите <b>целое число</b> от 1 до 7.", parse_mode="HTML")
-        return SPORT_FREQ
-
-    return await ask_waist(update, context)
-
-async def ask_waist(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("📏 <b>Введи обхват талии</b> (в см):", parse_mode="HTML")
-    return FIRST_TOUCH_WAIST
-
-async def handle_first_touch_waist(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    try:
-        waist = float(update.message.text.strip())
-        if not 30 <= waist <= 200:
-            raise ValueError
-    except ValueError:
-        await update.message.reply_text("❌ Введите <b>корректный обхват талии</b> от 30 до 200 см.", parse_mode="HTML")
-        return FIRST_TOUCH_WAIST
-
-    telegram_id = update.effective_user.id
-    user = context.user_data.get("user") or get_user_by_telegram_id(telegram_id)
-    weight = context.user_data.get("weight")
-    step = context.user_data.get("step_multiplier", 1.3)
-    sport = context.user_data.get("sport_multiplier", 1.0)
-    activity = round(step * sport, 2)
-
-    step_level = context.user_data.get("step_level")
-    sport_type = context.user_data.get("sport_type")
-    sport_freq = context.user_data.get("sport_freq")
-
-    db = SessionLocal()
-    record = get_or_create_today_record(user.id, db)
-    record.weight = weight
-    record.activity_level = activity
-    record.waist = waist
-    record.step_level = step_level
-    record.sport_type = sport_type
-    record.sport_freq = sport_freq
-    db.commit()
-    db.close()
-
-    context.user_data["bodyfat"] = {
-        "sex": user.sex,
-        "height": user.height,
-        "waist": waist
-    }
-    await update.message.reply_text("📏 <b>Введи обхват шеи</b> (в см):", parse_mode="HTML")
-    return NECK
-
-# === BASIC INFO HANDLERS ===
-
-async def handle_name(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    context.user_data["name"] = update.message.text.strip()
-    await update.message.reply_text("📅 Введи дату рождения (дд.мм.гггг):")
-    return BASIC_BIRTHDAY
-
-async def handle_birthday(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    context.user_data["birthday"] = update.message.text.strip()
-    await update.message.reply_text("📏 Введи свой рост в см:")
-    return BASIC_HEIGHT
-
-async def handle_height(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    context.user_data["height"] = update.message.text.strip()
-    await update.message.reply_text("👨 Укажи пол (Мужчина / Женщина):")
-    return BASIC_SEX
-
-async def handle_sex(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    context.user_data["sex"] = update.message.text.strip().lower()
-    return await after_form_finished(update, context)
-
-
-
-first_touch_handler = ConversationHandler(
-    entry_points=[CommandHandler("start", start_first_touch)],
-    states={
-        BASIC_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_name)],
-        BASIC_BIRTHDAY: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_birthday)],
-        BASIC_HEIGHT: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_height)],
-        BASIC_SEX: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_sex)],
-        FIRST_TOUCH_WEIGHT: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_first_touch_weight)],
-        STEP_COUNT: [CallbackQueryHandler(handle_steps_selection)],
-        SPORT_YN: [CallbackQueryHandler(handle_sport_yn)],
-        SPORT_TYPE: [CallbackQueryHandler(handle_sport_type)],
-        SPORT_FREQ: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_sport_freq)],
-        FIRST_TOUCH_WAIST: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_first_touch_waist)],
-        NECK: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_neck)],
-    },
-    fallbacks=[],
-    per_user=True,
-    per_chat=True,
-    per_message=False,
-)
-
+def get_first_touch_handler() -> ConversationHandler:
+    """Get the first touch conversation handler."""
+    handler = FirstTouchHandler()
+    return handler.handler

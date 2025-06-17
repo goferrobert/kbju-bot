@@ -2,108 +2,255 @@ import os
 import matplotlib.pyplot as plt
 from datetime import datetime
 from telegram import Update
-from telegram.ext import ContextTypes
-from sqlalchemy.orm import Session
+from telegram.ext import ContextTypes, ConversationHandler
 from sqlalchemy import asc
-from app.db.session import get_db
-from app.db.crud import get_user_by_telegram_id
-from app.db.models import UserRecord
+import io
+from typing import Optional, List, Tuple
 
-def get_all_records_for_user(user_id: int, db: Session) -> list[UserRecord]:
-    return (
-        db.query(UserRecord)
-        .filter(UserRecord.user_id == user_id)
-        .order_by(asc(UserRecord.created_at))
-        .all()
+from app.handlers.base import BaseHandler
+from app.db.models import User, UserRecord
+from app.utils.validation import ValidationError
+from app.utils.logging import get_logger
+
+logger = get_logger(__name__)
+
+class ProgressHandler(BaseHandler):
+    """Handler for user progress tracking and visualization."""
+
+    # Константы для форматирования
+    MESSAGES = {
+        "title": "📊 <b>Ваш прогресс за {period}:</b>\n\n",
+        "weight": (
+            "⚖️ <b>Вес:</b>\n"
+            "• Начальный: {start:.1f} кг\n"
+            "• Текущий: {current:.1f} кг\n"
+            "• Изменение: {change:+.1f} кг ({percent:+.1f}%)\n\n"
+        ),
+        "body_fat": (
+            "📏 <b>Процент жира:</b>\n"
+            "• Начальный: {start:.1f}%\n"
+            "• Текущий: {current:.1f}%\n"
+            "• Изменение: {change:+.1f}% ({percent:+.1f}%)\n\n"
+        ),
+        "progress": {
+            "Нормальное тело": {
+                "weight_loss": "• Отличный прогресс в снижении веса!\n",
+                "weight_gain": "• Внимание: наблюдается набор веса.\n",
+                "stable": "• Стабильный вес, продолжайте в том же духе.\n"
+            },
+            "Спортивное тело": {
+                "muscle_gain": "• Отличный набор мышечной массы!\n",
+                "weight_loss": "• Внимание: наблюдается потеря веса.\n",
+                "stable": "• Стабильный вес, продолжайте тренировки.\n"
+            },
+            "Сухое тело": {
+                "fat_loss": "• Отличный прогресс в снижении жира!\n",
+                "weight_gain": "• Внимание: наблюдается набор веса.\n",
+                "stable": "• Стабильный вес, продолжайте в том же духе.\n"
+            }
+        }
+    }
+
+    def describe_period(self, days: int) -> str:
+        """
+        Описание периода в человекочитаемом формате.
+        
+        Args:
+            days: Количество дней
+            
+        Returns:
+            str: Описание периода
+        """
+        if days < 7:
+            return f"{days} дней"
+        elif days < 30:
+            weeks = days // 7
+            return f"{weeks} {'неделю' if weeks == 1 else 'недели' if 1 < weeks < 5 else 'недель'}"
+        else:
+            months = days // 30
+            return f"{months} {'месяц' if months == 1 else 'месяца' if 1 < months < 5 else 'месяцев'}"
+
+    def smart_progress_message(
+        self,
+        weight_change: float,
+        fat_change: Optional[float],
+        goal: str
+    ) -> str:
+        """
+        Формирование умного сообщения о прогрессе.
+        
+        Args:
+            weight_change: Разница в весе
+            fat_change: Разница в проценте жира
+            goal: Цель пользователя
+            
+        Returns:
+            str: Сообщение о прогрессе
+        """
+        message = "🎯 <b>Анализ прогресса:</b>\n"
+        progress_messages = self.MESSAGES["progress"][goal]
+
+        if goal == "Нормальное тело":
+            if weight_change < -2:
+                message += progress_messages["weight_loss"]
+            elif weight_change > 2:
+                message += progress_messages["weight_gain"]
+            else:
+                message += progress_messages["stable"]
+        elif goal == "Спортивное тело":
+            if weight_change > 2 and fat_change and fat_change < 1:
+                message += progress_messages["muscle_gain"]
+            elif weight_change < -2:
+                message += progress_messages["weight_loss"]
+            else:
+                message += progress_messages["stable"]
+        else:  # Сухое тело
+            if weight_change < -1 and fat_change and fat_change < -1:
+                message += progress_messages["fat_loss"]
+            elif weight_change > 1:
+                message += progress_messages["weight_gain"]
+            else:
+                message += progress_messages["stable"]
+
+        return message
+
+    def create_progress_graph(self, records: List[UserRecord]) -> Optional[io.BytesIO]:
+        """
+        Создание графика прогресса.
+        
+        Args:
+            records: Список записей пользователя
+            
+        Returns:
+            Optional[io.BytesIO]: Объект BytesIO с сохраненным графиком или None, если данных недостаточно
+        """
+        if len(records) < 2:
+            return None
+
+        plt.figure(figsize=(10, 6))
+        dates = [r.created_at for r in records]
+        weights = [r.weight for r in records]
+        body_fat = [r.body_fat for r in records if r.body_fat]
+
+        # Plot weight
+        plt.plot(dates, weights, 'b-', label='Вес (кг)', linewidth=2)
+        plt.scatter(dates, weights, color='blue', s=50)
+
+        # Plot body fat if available
+        if body_fat:
+            fat_dates = [r.created_at for r in records if r.body_fat]
+            plt.plot(fat_dates, body_fat, 'r-', label='Процент жира (%)', linewidth=2)
+            plt.scatter(fat_dates, body_fat, color='red', s=50)
+
+        plt.title('Прогресс изменений', fontsize=14)
+        plt.xlabel('Дата', fontsize=12)
+        plt.ylabel('Значение', fontsize=12)
+        plt.grid(True, linestyle='--', alpha=0.7)
+        plt.legend()
+
+        # Format x-axis dates
+        plt.gcf().autofmt_xdate()
+
+        # Save plot to bytes
+        buf = io.BytesIO()
+        plt.savefig(buf, format='png', dpi=300, bbox_inches='tight')
+        buf.seek(0)
+        plt.close()
+
+        return buf
+
+    def calculate_changes(self, first_record: UserRecord, last_record: UserRecord) -> Tuple[float, float, Optional[float], Optional[float]]:
+        """
+        Расчет изменений между первой и последней записью.
+        
+        Args:
+            first_record: Первая запись
+            last_record: Последняя запись
+            
+        Returns:
+            Tuple[float, float, Optional[float], Optional[float]]: 
+                (изменение веса, процент изменения веса, изменение жира, процент изменения жира)
+        """
+        weight_change = last_record.weight - first_record.weight
+        weight_percent = (weight_change / first_record.weight) * 100
+
+        fat_change = None
+        fat_percent = None
+        if first_record.body_fat and last_record.body_fat:
+            fat_change = last_record.body_fat - first_record.body_fat
+            fat_percent = (fat_change / first_record.body_fat) * 100
+
+        return weight_change, weight_percent, fat_change, fat_percent
+
+    @BaseHandler.handle_errors
+    async def show_progress(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+        """
+        Показ прогресса пользователя.
+        
+        Args:
+            update: Объект обновления Telegram
+            context: Контекст бота
+            
+        Returns:
+            int: Код состояния после обработки команды
+        """
+        user = await self.get_user(update.effective_user.id)
+        if not user:
+            raise ValidationError("Пользователь не найден")
+
+        records = await self.get_all_records(user.id)
+        if not records or len(records) < 2:
+            raise ValidationError("Недостаточно данных для анализа прогресса")
+
+        # Анализируем изменения
+        first_record = records[0]
+        last_record = records[-1]
+        days_passed = (last_record.created_at - first_record.created_at).days
+
+        # Рассчитываем изменения
+        weight_change, weight_percent, fat_change, fat_percent = self.calculate_changes(first_record, last_record)
+
+        # Формируем сообщение о прогрессе
+        message = self.MESSAGES["title"].format(period=self.describe_period(days_passed))
+
+        # Добавляем информацию о весе
+        message += self.MESSAGES["weight"].format(
+            start=first_record.weight,
+            current=last_record.weight,
+            change=weight_change,
+            percent=weight_percent
+        )
+
+        # Добавляем информацию о проценте жира
+        if fat_change is not None:
+            message += self.MESSAGES["body_fat"].format(
+                start=first_record.body_fat,
+                current=last_record.body_fat,
+                change=fat_change,
+                percent=fat_percent
+            )
+
+        # Добавляем умный анализ
+        message += self.smart_progress_message(
+            weight_change=weight_change,
+            fat_change=fat_change,
+            goal=user.goal
+        )
+
+        # Создаем график прогресса
+        graph = self.create_progress_graph(records)
+        if graph:
+            await self.send_photo(update, graph, caption=message, parse_mode="HTML")
+        else:
+            await self.send_message(update, message, parse_mode="HTML")
+
+        return ConversationHandler.END
+
+def get_progress_handler() -> ConversationHandler:
+    """Get the progress conversation handler."""
+    handler = ProgressHandler()
+    return ConversationHandler(
+        entry_points=[handler.show_progress],
+        states={},
+        fallbacks=[]
     )
-
-def describe_period(days: int) -> str:
-    if days < 7:
-        return f"всего за {days} дней"
-    months = days / 30
-    if months < 1.5:
-        return "всего за 1 месяц"
-    elif months < 2.5:
-        return "всего за 1.5 месяца"
-    elif months < 3.5:
-        return "всего за 2 месяца"
-    elif months < 6:
-        return f"всего за {round(months)} месяца"
-    else:
-        return f"всего за {round(months)} месяцев"
-
-def smart_progress_message(weight_diff, fat_diff, days):
-    if weight_diff < 0 and fat_diff < 0:
-        return (
-            f"🌟 <b>WOW! Ты большой молодец!</b>\n"
-            f"Ты снизил вес на <b>{abs(weight_diff):.1f} кг</b> и жир на <b>{abs(fat_diff):.1f}%</b> — "
-            f"{describe_period(days)}! 🔥\n"
-            f"Не останавливайся!"
-        )
-    elif weight_diff < 0 and fat_diff > 0:
-        return (
-            f"📉 Вес снизился на <b>{abs(weight_diff):.1f} кг</b>! 🔥\n"
-            f"Но % жира вырос на <b>{abs(fat_diff):.1f}%</b> — такое бывает.\n"
-            f"{describe_period(days).capitalize()} — продолжай 💪"
-        )
-    elif weight_diff > 0 and fat_diff < 0:
-        return (
-            f"🎯 Жир снизился на <b>{abs(fat_diff):.1f}%</b>! 🎉\n"
-            f"А вес вырос на <b>{abs(weight_diff):.1f} кг</b> — возможно, это мышцы или вода.\n"
-            f"{describe_period(days).capitalize()} — супер!"
-        )
-    elif weight_diff == 0 and fat_diff == 0:
-        return f"📊 У тебя стабильный уровень.\n{describe_period(days).capitalize()} — это уже хорошо!"
-    else:
-        return (
-            f"⚠️ Есть небольшой рост веса или жира.\n"
-            f"{describe_period(days).capitalize()} — ты уже сделал шаг, не сдавайся!"
-        )
-
-async def show_progress(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    db = next(get_db())
-    user = get_user_by_telegram_id(update.effective_user.id)
-    if not user:
-        await update.message.reply_text("❌ Пользователь не найден.", parse_mode="HTML")
-        return
-
-    records = get_all_records_for_user(user.id, db)
-    if not records or len(records) < 2:
-        await update.message.reply_text("ℹ️ Недостаточно данных для анализа прогресса.", parse_mode="HTML")
-        return
-
-    weight_records = sorted([(r.created_at.date(), r.weight) for r in records if r.weight is not None])
-    fat_records = sorted([(r.created_at.date(), r.body_fat) for r in records if r.body_fat is not None])
-
-    if len(weight_records) < 2 or len(fat_records) < 2:
-        await update.message.reply_text("📉 Нужно хотя бы 2 записи веса и жира для построения графика.", parse_mode="HTML")
-        return
-
-    dates = [d for d, w in weight_records]
-    weights = [w for d, w in weight_records]
-    weight_diff = weights[-1] - weights[0]
-    fat_diff = fat_records[-1][1] - fat_records[0][1]
-    days = (dates[-1] - dates[0]).days
-
-    # График
-    plt.figure(figsize=(8, 4))
-    plt.plot(dates, weights, marker='o', linestyle='-', linewidth=2, label='Вес (кг)')
-    plt.title("Прогресс веса")
-    plt.xlabel("Дата")
-    plt.ylabel("Вес (кг)")
-    plt.grid(True)
-    plt.tight_layout()
-
-    graph_path = "static/progress_graph.png"
-    os.makedirs("static", exist_ok=True)
-    plt.savefig(graph_path)
-    plt.close()
-
-    text = (
-        "📈 <b>Вот как ты продвигаешься:</b>\n\n"
-        f"{smart_progress_message(weight_diff, fat_diff, days)}"
-    )
-    await update.message.reply_text(text, parse_mode="HTML")
-
-    with open(graph_path, "rb") as f:
-        await context.bot.send_photo(chat_id=update.effective_chat.id, photo=f)

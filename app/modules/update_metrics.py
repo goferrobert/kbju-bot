@@ -1,10 +1,10 @@
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import Update
 from telegram.ext import ContextTypes, ConversationHandler
 from app.handlers.base import BaseHandler
 from app.handlers.fsm_states import UserStates
 from app.db.models import UserRecord
 from app.utils.validation import ValidationError
-from app.utils.logging import get_logger
+from app.utils.logger import get_logger
 from app.utils.calculations import calculate_body_fat
 
 logger = get_logger(__name__)

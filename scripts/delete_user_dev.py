@@ -1,5 +1,6 @@
 # scripts/delete_user_dev.py
 # Удаляет пользователя и связанные записи из dev-базы
+# ruff: noqa: E402
 
 import sys
 import os

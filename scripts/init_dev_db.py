@@ -1,5 +1,6 @@
 # scripts/init_dev_db.py
 # Создаёт dev-базу данных с нуля
+# ruff: noqa: E402
 
 import sys
 import os

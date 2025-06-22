@@ -1,4 +1,4 @@
-from typing import Optional, Any
+from typing import Optional
 from telegram import Update
 from telegram.ext import ContextTypes
 from telegram.error import TelegramError

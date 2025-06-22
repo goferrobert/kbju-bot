@@ -6,10 +6,9 @@ from typing import Optional
 from jose import JWTError, jwt
 from passlib.context import CryptContext
 from ..db.session import get_db
-from ..db.crud import get_user_by_telegram_id, create_user
-from ..models import User
+from ..db.models import User
 from ..schemas import UserCreate, UserResponse, Token, TokenData
-from core.logging import get_logger
+from app.core.logging import get_logger
 
 logger = get_logger(__name__)
 

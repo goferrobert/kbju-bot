@@ -5,7 +5,7 @@ from datetime import date
 from app.handlers.base import BaseHandler
 from app.db.models import User, UserRecord
 from app.utils.validation import ValidationError
-from app.utils.logging import get_logger
+from app.utils.logger import get_logger
 
 logger = get_logger(__name__)
 

@@ -1,6 +1,4 @@
 from typing import Dict, Optional, Tuple
-from app.utils.validation import ValidationError
-from datetime import datetime
 import math
 
 def calculate_body_fat(

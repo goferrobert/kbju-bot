@@ -6,7 +6,6 @@ from telegram.ext import (
     ContextTypes, ConversationHandler, MessageHandler,
     CommandHandler, CallbackQueryHandler, filters
 )
-from datetime import datetime
 from app.db.crud import get_user_by_telegram_id, create_user, update_user
 from app.ui.keyboards import menu_callback_handler
 from app.modules.first_touch import after_form_finished
@@ -18,7 +17,7 @@ from app.core.states import (
     BASIC_NAME, BASIC_BIRTHDAY, BASIC_HEIGHT, BASIC_SEX
 )
 from app.core.handlers import BaseHandler
-from core.logging import get_logger
+from app.core.logging import get_logger
 
 logger = get_logger(__name__)
 

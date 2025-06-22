@@ -1,16 +1,13 @@
-import os
 import matplotlib.pyplot as plt
-from datetime import datetime
 from telegram import Update
 from telegram.ext import ContextTypes, ConversationHandler
-from sqlalchemy import asc
 import io
 from typing import Optional, List, Tuple
 
 from app.handlers.base import BaseHandler
-from app.db.models import User, UserRecord
+from app.db.models import UserRecord
 from app.utils.validation import ValidationError
-from app.utils.logging import get_logger
+from app.utils.logger import get_logger
 
 logger = get_logger(__name__)
 

@@ -1,7 +1,7 @@
 import logging
 import os
 from datetime import datetime
-from typing import Any, Dict, Optional
+from typing import Optional
 from logging.handlers import RotatingFileHandler
 
 class Logger:

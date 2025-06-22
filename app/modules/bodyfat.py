@@ -3,19 +3,13 @@ from telegram.ext import (
     ContextTypes, ConversationHandler,
     CallbackQueryHandler, MessageHandler, filters
 )
-from datetime import datetime
 from math import log10
 
 from app.handlers.base import BaseHandler
 from app.handlers.fsm_states import UserStates
-from app.db.models import User, UserRecord
 from app.utils.validation import ValidationError
-from app.utils.logging import get_logger
+from app.utils.logger import get_logger
 
-from app.modules.kbju import calculate_kbju
-from app.modules.my_data import show_user_summary
-from app.modules.invite import send_consultation_invite
-from app.modules.goals import show_goal_analysis, show_goal_kbju
 
 logger = get_logger(__name__)
 

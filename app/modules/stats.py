@@ -1,16 +1,14 @@
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes, ConversationHandler
-from typing import List, Dict, Optional, Tuple
-from datetime import datetime, timedelta
+from typing import List, Dict, Optional
 import matplotlib.pyplot as plt
 import io
-import json
 
 from app.handlers.base import BaseHandler
 from app.handlers.fsm_states import UserStates
-from app.db.models import User, UserRecord
+from app.db.models import UserRecord
 from app.utils.validation import ValidationError
-from app.utils.logging import get_logger
+from app.utils.logger import get_logger
 
 logger = get_logger(__name__)
 

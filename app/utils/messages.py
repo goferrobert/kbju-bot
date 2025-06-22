@@ -1,6 +1,5 @@
-from typing import Any, Dict, List, Optional, Union
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup, ParseMode
-from app.utils.config import config
+from typing import Any, Dict, List
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
 class Messages:
     """Message formatting and keyboard utilities."""

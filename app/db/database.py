@@ -1,10 +1,8 @@
 from contextlib import contextmanager
-from typing import Any, Dict, List, Optional, Union
+from typing import List, Optional
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, Session
-from sqlalchemy.exc import SQLAlchemyError
 from app.db.models import Base, User, UserRecord, UserActivity, UserGoal, UserSettings, UserNotification
-from app.utils.validation import ValidationError
 
 class Database:
     """Database connection and operations manager."""
@@ -332,7 +330,7 @@ class Database:
         """
         with self.get_session() as session:
             return session.query(UserNotification)\
-                .filter(UserNotification.is_active == True)\
+                .filter(UserNotification.is_active.is_(True))\
                 .order_by(UserNotification.time)\
                 .all()
     

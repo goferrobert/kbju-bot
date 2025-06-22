@@ -1,5 +1,4 @@
-import os
-from telegram.ext import Application, CommandHandler, CallbackQueryHandler
+from telegram.ext import Application, CallbackQueryHandler
 from app.bot.handler import BotHandler
 from app.db.database import Database
 from app.utils.config import config

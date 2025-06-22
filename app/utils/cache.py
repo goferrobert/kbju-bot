@@ -1,7 +1,6 @@
 from datetime import datetime, timedelta
 from typing import Any, Dict, Optional, Tuple
 from threading import Lock
-import json
 
 class Cache:
     """Simple in-memory cache with TTL support."""

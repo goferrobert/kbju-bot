@@ -1,10 +1,8 @@
-from typing import Dict, Any, Optional
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import Update
 from telegram.ext import (
     CallbackContext,
     CommandHandler,
     MessageHandler,
-    CallbackQueryHandler,
     ConversationHandler,
     filters
 )
@@ -31,7 +29,6 @@ from app.utils.validation import (
 from app.utils.calculations import (
     calculate_body_fat,
     calculate_bmr,
-    calculate_tdee,
     calculate_macros
 )
 from app.db.database import Database

@@ -1,5 +1,4 @@
 from datetime import datetime, date
-from typing import Union, Optional
 from app.core.errors import ValidationError
 
 def validate_name(name: str) -> tuple[str, str]:

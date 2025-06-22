@@ -1,8 +1,8 @@
 from functools import wraps
 from telegram import Update
 from telegram.ext import ContextTypes, ConversationHandler
-from core.logging import get_logger
-from core.errors import handle_error
+from app.core.logging import get_logger
+from app.core.errors import handle_error
 
 logger = get_logger(__name__)
 

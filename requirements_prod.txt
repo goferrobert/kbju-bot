@@ -1,0 +1,63 @@
+# PROD зависимости для KBJU Bot
+# Версия: PROD v1.0.0
+# Дата: 28.07.2025
+
+# Основной фреймворк
+python-telegram-bot==20.7
+python-telegram-bot[rate-limiter]==20.7
+
+# База данных
+psycopg2-binary==2.9.9
+SQLAlchemy==2.0.23
+alembic==1.13.1
+
+# Мониторинг и метрики
+prometheus-client==0.19.0
+sentry-sdk==1.40.4
+
+# Логирование
+python-json-logger==2.0.7
+
+# HTTP клиент
+httpx==0.25.2
+aiohttp==3.9.1
+
+# Утилиты
+python-dotenv==1.0.0
+pydantic==2.5.2
+pydantic-settings==2.1.0
+
+# Графики и визуализация
+matplotlib==3.8.2
+seaborn==0.13.0
+plotly==5.17.0
+
+# Валидация данных
+pydantic==2.5.2
+email-validator==2.1.0
+
+# Асинхронность
+asyncio==3.4.3
+aiofiles==23.2.1
+
+# Безопасность
+cryptography==41.0.8
+bcrypt==4.1.2
+
+# Тестирование
+pytest==7.4.3
+pytest-asyncio==0.21.1
+pytest-cov==4.1.0
+
+# Разработка
+black==23.12.1
+flake8==7.0.0
+mypy==1.8.0
+
+# Документация
+sphinx==7.2.6
+sphinx-rtd-theme==2.0.0
+
+# Дополнительные утилиты
+python-dateutil==2.8.2
+pytz==2023.3 

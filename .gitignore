@@ -2,6 +2,11 @@
 *.db
 *.sqlite
 *.sqlite3
+.env
+.env.prod
+.env.local
+*.token
+tokens.txt
 
 # Временные файлы
 __pycache__/

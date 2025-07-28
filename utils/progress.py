@@ -5,6 +5,59 @@ import os
 from typing import List, Dict
 from models.tables import UserRecord
 
+def select_records_for_graph(records: List[UserRecord], max_points: int = 7) -> List[UserRecord]:
+    """
+    Умный отбор записей для графика:
+    - Всегда включает первый и последний замер
+    - Максимум max_points точек
+    - Если записей <= max_points, возвращает все
+    - Если записей > max_points, выбирает ключевые точки
+    """
+    if len(records) <= max_points:
+        return sorted(records, key=lambda x: x.date)
+    
+    # Сортируем записи по дате
+    sorted_records = sorted(records, key=lambda x: x.date)
+    
+    # Всегда включаем первый и последний
+    first_record = sorted_records[0]
+    last_record = sorted_records[-1]
+    
+    # Если у нас только 2 записи, возвращаем их
+    if len(sorted_records) == 2:
+        return [first_record, last_record]
+    
+    # Выбираем промежуточные точки
+    remaining_slots = max_points - 2  # 2 уже заняты (первый и последний)
+    
+    if remaining_slots <= 0:
+        return [first_record, last_record]
+    
+    # Выбираем промежуточные записи равномерно
+    middle_records = sorted_records[1:-1]  # Исключаем первый и последний
+    
+    if len(middle_records) <= remaining_slots:
+        # Если промежуточных записей меньше или равно оставшимся слотам
+        selected_middle = middle_records
+    else:
+        # Выбираем равномерно распределенные точки
+        step = len(middle_records) / (remaining_slots + 1)
+        selected_indices = [int(i * step) for i in range(1, remaining_slots + 1)]
+        selected_middle = [middle_records[i] for i in selected_indices if i < len(middle_records)]
+    
+    # Собираем финальный список
+    result = [first_record] + selected_middle + [last_record]
+    
+    # Убираем дубликаты и сортируем
+    unique_records = []
+    seen_dates = set()
+    for record in result:
+        if record.date not in seen_dates:
+            unique_records.append(record)
+            seen_dates.add(record.date)
+    
+    return sorted(unique_records, key=lambda x: x.date)
+
 def get_motivational_message(records) -> str:
     """
     Генерирует мотивационное сообщение на основе прогресса пользователя
@@ -60,12 +113,12 @@ def create_progress_graph(records) -> str:
     if len(records) < 2:
         return None
     
-    # Сортируем записи по дате (старые -> новые)
-    sorted_records = sorted(records, key=lambda x: x.date)
+    # Используем умный отбор записей для графика
+    selected_records = select_records_for_graph(records, max_points=7)
     
     # Подготавливаем данные
-    dates = [record.date for record in sorted_records]
-    weights = [record.weight for record in sorted_records]
+    dates = [record.date for record in selected_records]
+    weights = [record.weight for record in selected_records]
     
     # Создаем график с увеличенным размером для мобильных устройств
     plt.figure(figsize=(14, 8))

@@ -18,13 +18,11 @@ from utils.calculations import calculate_bodyfat, calculate_kbju, calculate_step
 
 async def start_new_measurements(message: types.Message, state: FSMContext):
     """Начать новые измерения"""
-    logging.info(f"start_new_measurements: user={message.from_user.id}")
-    db = SessionLocal()
-    user = get_user(db, message.from_user.id)
-    db.close()
-    if not user:
-        await message.answer("❌ Сначала пройдите анкету! Используйте /start")
-        return
+    user_id = message.from_user.id
+    logging.info(f"start_new_measurements: user_id={user_id}")
+    
+    # Сохраняем ID пользователя в состояние
+    await state.update_data(user_id=user_id)
     
     await message.answer("📝 Давайте сделаем новые замеры!")
     await ask_waist_measurement(message, state)
@@ -75,11 +73,13 @@ async def ask_hip_measurement(message: types.Message, state: FSMContext):
     db = SessionLocal()
     user = get_user(db, message.from_user.id)
     db.close()
-    if user.sex == 'female':
+    
+    # Если пользователь не существует или пол не указан, пропускаем измерение бедер
+    if not user or not user.sex or user.sex != 'female':
+        await ask_weight_measurement(message, state)
+    else:
         await message.answer(get_hip_request())
         await MeasurementsStates.hip.set()
-    else:
-        await ask_weight_measurement(message, state)
 
 async def process_hip_measurement(message: types.Message, state: FSMContext):
     """Обработать измерение бедер"""
@@ -149,8 +149,22 @@ async def process_sport_type_measurement(callback: types.CallbackQuery, state: F
     sport_type = callback.data.split('_')[1]  # sport_running -> running
     logging.info(f"process_sport_type_measurement: user={callback.from_user.id}, sport_type={sport_type}")
     
+    # Форматируем название спорта для отображения
+    sport_names = {
+        'none': '❌ Не занимаюсь',
+        'walking': '🚶 Ходьба/Прогулки',
+        'running': '🏃 Бег/Кардио',
+        'strength': '🏋️ Тренажерный зал',
+        'yoga': '🧘 Йога/Пилатес',
+        'swimming': '🏊 Плавание',
+        'cycling': '🚴 Велосипед',
+        'team': '⚽ Футбол/Баскетбол'
+    }
+    
+    sport_text = sport_names.get(sport_type, sport_type)
+    
     await state.update_data(sport_type=sport_type)
-    await callback.message.edit_text(f"{callback.message.text}\n\n✅ Выбрано: {sport_type}")
+    await callback.message.edit_text(f"{callback.message.text}\n\n✅ Выбрано: {sport_text}")
     await ask_sport_freq_measurement(callback.message, state)
 
 async def ask_sport_freq_measurement(message: types.Message, state: FSMContext):
@@ -167,53 +181,87 @@ async def process_sport_freq_measurement(callback: types.CallbackQuery, state: F
     sport_freq = callback.data.split('_')[1]  # freq_3 -> 3
     logging.info(f"process_sport_freq_measurement: user={callback.from_user.id}, sport_freq={sport_freq}")
     
+    # Форматируем частоту тренировок
+    freq_names = {
+        '0': '0 раз в неделю',
+        '1': '1 раз в неделю',
+        '2': '2 раза в неделю',
+        '3': '3 раза в неделю',
+        '4': '4 раза в неделю',
+        '5': '5 раз в неделю',
+        '6': '6 раз в неделю',
+        'daily': 'Ежедневно'
+    }
+    
+    freq_text = freq_names.get(sport_freq, f"{sport_freq} раз в неделю")
+    
     await state.update_data(sport_freq=sport_freq)
-    await callback.message.edit_text(f"{callback.message.text}\n\n✅ Выбрано: {sport_freq} раза в неделю")
+    await callback.message.edit_text(f"{callback.message.text}\n\n✅ Выбрано: {freq_text}")
     await finish_measurements(callback.message, state)
 
 async def finish_measurements(message: types.Message, state: FSMContext):
     """Завершить измерения и сохранить данные"""
-    logging.info(f"finish_measurements: user={message.from_user.id}")
-    db = SessionLocal()
+    # Получаем правильный ID пользователя
+    user_id = None
+    
+    # Проверяем, есть ли в состоянии информация о пользователе
     measurements_data = await state.get_data()
     
+    # Если это callback message, получаем ID из chat
+    if hasattr(message, 'chat') and hasattr(message.chat, 'id'):
+        user_id = message.chat.id
+    else:
+        # Пытаемся получить ID из различных источников
+        if hasattr(message, 'from_user') and hasattr(message.from_user, 'id'):
+            user_id = message.from_user.id
+        elif hasattr(message, 'chat') and hasattr(message.chat, 'id'):
+            user_id = message.chat.id
+        else:
+            # Используем ID из состояния или из данных измерений
+            user_id = measurements_data.get('user_id')
+    
+    logging.info(f"finish_measurements: user_id={user_id}")
+    
+    if not user_id:
+        logging.error(f"finish_measurements: не удалось определить ID пользователя")
+        await message.answer("❌ Ошибка: не удалось определить пользователя!")
+        await message.answer("🏠 Главное меню", reply_markup=get_main_menu_inline_keyboard())
+        await state.finish()
+        return
+    
+    db = SessionLocal()
+    
+    # Сначала получаем или создаем пользователя
+    user = get_user(db, user_id)
+    
+    if not user:
+        # Создаем пользователя с базовыми данными
+        from crud.user_crud import create_user
+        user = create_user(
+            db, 
+            user_id,
+            username=None,  # Не можем получить username из callback
+            first_name="Пользователь",
+            last_name="Тестовый",
+            sex='male'  # По умолчанию, можно будет изменить позже
+        )
+        if not user:
+            logging.error(f"finish_measurements: НЕ удалось создать пользователя для ID {user_id}")
+            await message.answer("❌ Ошибка: не удалось создать пользователя!")
+            await message.answer("🏠 Главное меню", reply_markup=get_main_menu_inline_keyboard())
+            await state.finish()
+            db.close()
+            return
+    
     # Получаем последнюю запись для получения роста и других данных
-    from crud.record_crud import get_latest_record
-    latest_record = get_latest_record(db, message.from_user.id)
+    from crud.record_crud import get_latest_record, get_user_records
+    latest_record = get_latest_record(db, user_id)
     
     # Рассчитываем множитель шагов
     from utils.calculations import calculate_step_multiplier
     step_multiplier = calculate_step_multiplier(measurements_data.get('steps', '8000-10000'))
     
-    # Создаем новую запись со всеми данными
-    create_or_update_record(
-        db,
-        message.from_user.id,
-        date.today(),
-        weight=measurements_data['weight'],
-        waist=measurements_data['waist'],
-        neck=measurements_data['neck'],
-        hip=measurements_data.get('hip'),
-        steps=measurements_data.get('steps', '8000-10000'),
-        sport_type=measurements_data.get('sport_type', 'none'),
-        sport_freq=measurements_data.get('sport_freq', '0'),
-        step_multiplier=step_multiplier,
-        height=latest_record.height if latest_record else 170,
-        goal=latest_record.goal if latest_record else 'maintain'
-    )
-    
-    # Получаем пользователя для расчета процента жира
-    user = get_user(db, message.from_user.id)
-    db.close()
-    
-    # Проверяем, что пользователь существует
-    if not user:
-        await message.answer("❌ Ошибка: пользователь не найден. Сначала пройдите регистрацию!")
-        await message.answer("🏠 Главное меню", reply_markup=get_main_menu_inline_keyboard())
-        await state.finish()
-        return
-    
-    # Рассчитываем процент жира
+    # Рассчитываем процент жира ДО сохранения записи
     user_data = {
         'sex': user.sex,
         'height': latest_record.height if latest_record else 170,
@@ -224,6 +272,59 @@ async def finish_measurements(message: types.Message, state: FSMContext):
     }
     
     bodyfat = calculate_bodyfat(user_data)
+    
+    # Создаем новую запись со всеми данными, включая правильный bodyfat
+    record_result = create_or_update_record(
+        db,
+        user_id,
+        date.today(),
+        weight=measurements_data['weight'],
+        waist=measurements_data['waist'],
+        neck=measurements_data['neck'],
+        hip=measurements_data.get('hip'),
+        steps=measurements_data.get('steps', '8000-10000'),
+        sport_type=measurements_data.get('sport_type', 'none'),
+        sport_freq=measurements_data.get('sport_freq', '0'),
+        step_multiplier=step_multiplier,
+        height=latest_record.height if latest_record else 170,
+        goal=latest_record.goal if latest_record else 'maintain',
+        bodyfat=bodyfat  # Сохраняем правильный процент жира
+    )
+    
+    if not record_result:
+        logging.error(f"finish_measurements: НЕ удалось создать запись измерений для пользователя {user_id}")
+        await message.answer("❌ Ошибка: не удалось сохранить измерения!")
+        await message.answer("🏠 Главное меню", reply_markup=get_main_menu_inline_keyboard())
+        await state.finish()
+        db.close()
+        return
+    
+    # Получаем все записи пользователя для анализа прогресса
+    all_records = get_user_records(db, user_id)
+    db.close()
+    
+    # Форматируем данные активности
+    sport_names = {
+        'none': '❌ Не занимаюсь',
+        'walking': '🚶 Ходьба/Прогулки',
+        'running': '🏃 Бег/Кардио',
+        'strength': '🏋️ Тренажерный зал',
+        'yoga': '🧘 Йога/Пилатес',
+        'swimming': '🏊 Плавание',
+        'cycling': '🚴 Велосипед',
+        'team': '⚽ Футбол/Баскетбол'
+    }
+    
+    freq_names = {
+        '0': '0 раз в неделю',
+        '1': '1 раз в неделю',
+        '2': '2 раза в неделю',
+        '3': '3 раза в неделю',
+        '4': '4 раза в неделю',
+        '5': '5 раз в неделю',
+        '6': '6 раз в неделю',
+        'daily': 'Ежедневно'
+    }
     
     # Показываем результаты
     text = f"""✅ **Новые замеры сохранены!**
@@ -240,13 +341,18 @@ async def finish_measurements(message: types.Message, state: FSMContext):
 
 🏃‍♂️ **Активность:**
 • Шаги: {measurements_data.get('steps', '8000-10000')}
-• Спорт: {measurements_data.get('sport_type', 'нет')}
-• Частота: {measurements_data.get('sport_freq', '0')} раз в неделю
+• Спорт: {sport_names.get(measurements_data.get('sport_type', 'none'), 'Не указано')}
+• Частота: {freq_names.get(measurements_data.get('sport_freq', '0'), f"{measurements_data.get('sport_freq', '0')} раз в неделю")}
 
 🔥 **Процент жира:** {bodyfat:.1f}%"""
     
     await message.answer(text, parse_mode='Markdown')
-    await message.answer("🏠 Главное меню", reply_markup=get_main_menu_inline_keyboard())
+    
+    # Показываем мотивирующее сообщение, если есть прогресс
+    if len(all_records) >= 2:
+        from utils.progress import get_motivational_message
+        motivational_text = get_motivational_message(all_records)
+        await message.answer(motivational_text, parse_mode='Markdown')
     
     await state.finish()
 

@@ -6,15 +6,102 @@ import logging
 
 from models.database import SessionLocal
 from crud.user_crud import get_user
-from crud.record_crud import create_or_update_record, get_latest_record
+from crud.record_crud import create_or_update_record, get_latest_record, get_user_records
 from states.fsm_states import MeasurementsStates
 from utils.texts import (
     get_weight_request, get_waist_request, get_neck_request, get_hip_request,
-    get_validation_error, get_final_results_text, get_kbju_explanation
+    get_chest_request, get_bicep_request, get_thigh_request,
+    get_wrist_request, get_calf_request, get_forearm_request, get_abdomen_request,
+    get_sleep_request, get_stress_request,
+    get_validation_error, get_final_results_text, get_kbju_explanation,
+    get_comprehensive_metrics_text, get_metabolic_analysis_text, get_body_composition_text,
+    get_safety_warnings_text, get_adaptive_recommendations_text
 )
-from utils.buttons import get_main_menu_inline_keyboard
-from utils.validators import validate_weight, validate_measurement
-from utils.calculations import calculate_bodyfat, calculate_kbju, calculate_step_multiplier
+from utils.buttons import get_main_menu_inline_keyboard, get_stress_keyboard
+from utils.validators import (
+    validate_weight, validate_measurement, validate_wrist_measurement,
+    validate_calf_measurement, validate_forearm_measurement, validate_abdomen_measurement,
+    validate_sleep_hours, validate_stress_level
+)
+from utils.calculations import (
+    calculate_bodyfat_precise, calculate_kbju, calculate_step_multiplier,
+    calculate_comprehensive_metrics, safety_checks, get_adaptive_recommendations
+)
+
+# Конфигурация измерений для универсальной обработки
+MEASUREMENT_CONFIG = {
+    'waist': {
+        'request_func': get_waist_request,
+        'validator': 'validate_waist_measurement',
+        'state': MeasurementsStates.waist,
+        'next': 'neck',
+        'error_msg': "Обхват талии должен быть числом от 50 до 200 см"
+    },
+    'neck': {
+        'request_func': get_neck_request,
+        'validator': 'validate_neck_measurement',
+        'state': MeasurementsStates.neck,
+        'next': 'hip',
+        'error_msg': "Обхват шеи должен быть числом от 20 до 100 см"
+    },
+    'hip': {
+        'request_func': get_hip_request,
+        'validator': 'validate_hip_measurement',
+        'state': MeasurementsStates.hip,
+        'next': 'chest',
+        'error_msg': "Обхват бедер должен быть числом от 50 до 200 см",
+        'conditional': True  # Только для женщин
+    },
+    'chest': {
+        'request_func': get_chest_request,
+        'validator': 'validate_chest_measurement',
+        'state': MeasurementsStates.chest,
+        'next': 'bicep',
+        'error_msg': "Обхват груди должен быть числом от 60 до 150 см"
+    },
+    'bicep': {
+        'request_func': get_bicep_request,
+        'validator': 'validate_bicep_measurement',
+        'state': MeasurementsStates.bicep,
+        'next': 'thigh',
+        'error_msg': "Обхват плеча должен быть числом от 20 до 60 см"
+    },
+    'thigh': {
+        'request_func': get_thigh_request,
+        'validator': 'validate_thigh_measurement',
+        'state': MeasurementsStates.thigh,
+        'next': 'wrist',
+        'error_msg': "Обхват бедра должен быть числом от 40 до 100 см"
+    },
+    'wrist': {
+        'request_func': get_wrist_request,
+        'validator': 'validate_wrist_measurement',
+        'state': MeasurementsStates.wrist,
+        'next': 'calf',
+        'error_msg': "Обхват запястья должен быть числом от 15 до 25 см"
+    },
+    'calf': {
+        'request_func': get_calf_request,
+        'validator': 'validate_calf_measurement',
+        'state': MeasurementsStates.calf,
+        'next': 'forearm',
+        'error_msg': "Обхват голени должен быть числом от 25 до 50 см"
+    },
+    'forearm': {
+        'request_func': get_forearm_request,
+        'validator': 'validate_forearm_measurement',
+        'state': MeasurementsStates.forearm,
+        'next': 'abdomen',
+        'error_msg': "Обхват предплечья должен быть числом от 20 до 40 см"
+    },
+    'abdomen': {
+        'request_func': get_abdomen_request,
+        'validator': 'validate_abdomen_measurement',
+        'state': MeasurementsStates.abdomen,
+        'next': 'sleep_hours',
+        'error_msg': "Обхват живота должен быть числом от 60 до 150 см"
+    }
+}
 
 async def start_new_measurements(message: types.Message, state: FSMContext):
     """Начать новые измерения"""
@@ -25,93 +112,112 @@ async def start_new_measurements(message: types.Message, state: FSMContext):
     await state.update_data(user_id=user_id)
     
     await message.answer("📝 Давайте сделаем новые замеры!")
-    await ask_waist_measurement(message, state)
+    await ask_measurement(message, state, 'waist')
 
-async def ask_waist_measurement(message: types.Message, state: FSMContext):
-    """Запросить измерение талии"""
-    logging.info(f"ask_waist_measurement: user={message.from_user.id}")
-    await message.answer(get_waist_request())
-    await MeasurementsStates.waist.set()
-
-async def process_waist_measurement(message: types.Message, state: FSMContext):
-    """Обработать измерение талии"""
-    waist = message.text.strip()
-    logging.info(f"process_waist_measurement: user={message.from_user.id}, waist={waist}")
-    from utils.validators import validate_waist_measurement
-    if not validate_waist_measurement(waist):
-        logging.warning(f"process_waist_measurement: user={message.from_user.id}, invalid waist={waist}")
-        await message.answer(get_validation_error("Обхват талии должен быть числом от 50 до 200 см"))
+async def ask_measurement(message: types.Message, state: FSMContext, measurement_type: str):
+    """Универсальная функция для запроса измерения"""
+    config = MEASUREMENT_CONFIG.get(measurement_type)
+    if not config:
+        logging.error(f"Unknown measurement type: {measurement_type}")
         return
-    await state.update_data(waist=float(waist))
-    logging.info(f"process_waist_measurement: user={message.from_user.id}, waist accepted={waist}")
-    await message.answer(f"✅ Обхват талии: {waist} см")
-    await ask_neck_measurement(message, state)
-
-async def ask_neck_measurement(message: types.Message, state: FSMContext):
-    """Запросить измерение шеи"""
-    logging.info(f"ask_neck_measurement: user={message.from_user.id}")
-    await message.answer(get_neck_request())
-    await MeasurementsStates.neck.set()
-
-async def process_neck_measurement(message: types.Message, state: FSMContext):
-    """Обработать измерение шеи"""
-    neck = message.text.strip()
-    logging.info(f"process_neck_measurement: user={message.from_user.id}, neck={neck}")
-    from utils.validators import validate_neck_measurement
-    if not validate_neck_measurement(neck):
-        logging.warning(f"process_neck_measurement: user={message.from_user.id}, invalid neck={neck}")
-        await message.answer(get_validation_error("Обхват шеи должен быть числом от 20 до 100 см"))
-        return
-    await state.update_data(neck=float(neck))
-    logging.info(f"process_neck_measurement: user={message.from_user.id}, neck accepted={neck}")
-    await message.answer(f"✅ Обхват шеи: {neck} см")
-    await ask_hip_measurement(message, state)
-
-async def ask_hip_measurement(message: types.Message, state: FSMContext):
-    """Запросить измерение бедер (только для женщин)"""
-    logging.info(f"ask_hip_measurement: user={message.from_user.id}")
-    db = SessionLocal()
-    user = get_user(db, message.from_user.id)
-    db.close()
     
-    # Если пользователь не существует или пол не указан, пропускаем измерение бедер
-    if not user or not user.sex or user.sex != 'female':
-        await ask_weight_measurement(message, state)
-    else:
-        await message.answer(get_hip_request())
-        await MeasurementsStates.hip.set()
+    # Проверяем условные измерения (например, бедра только для женщин)
+    if config.get('conditional'):
+        db = SessionLocal()
+        user = get_user(db, message.from_user.id)
+        db.close()
+        
+        if not user or not user.sex or user.sex != 'female':
+            # Пропускаем это измерение
+            await ask_measurement(message, state, config['next'])
+            return
+    
+    logging.info(f"ask_measurement: user={message.from_user.id}, type={measurement_type}")
+    await message.answer(config['request_func']())
+    await config['state'].set()
 
-async def process_hip_measurement(message: types.Message, state: FSMContext):
-    """Обработать измерение бедер"""
-    hip = message.text.strip()
-    logging.info(f"process_hip_measurement: user={message.from_user.id}, hip={hip}")
-    from utils.validators import validate_hip_measurement
-    if not validate_hip_measurement(hip):
-        logging.warning(f"process_hip_measurement: user={message.from_user.id}, invalid hip={hip}")
-        await message.answer(get_validation_error("Обхват бедер должен быть числом от 50 до 200 см"))
+async def process_measurement(message: types.Message, state: FSMContext, measurement_type: str):
+    """Универсальная функция для обработки измерения"""
+    config = MEASUREMENT_CONFIG.get(measurement_type)
+    if not config:
+        logging.error(f"Unknown measurement type: {measurement_type}")
         return
-    await state.update_data(hip=float(hip))
-    logging.info(f"process_hip_measurement: user={message.from_user.id}, hip accepted={hip}")
-    await message.answer(f"✅ Обхват бедер: {hip} см")
-    await ask_weight_measurement(message, state)
+    
+    value = message.text.strip()
+    logging.info(f"process_measurement: user={message.from_user.id}, type={measurement_type}, value={value}")
+    
+    # Импортируем валидатор динамически
+    import utils.validators as validators
+    validator_func = getattr(validators, config['validator'])
+    
+    if not validator_func(value):
+        logging.warning(f"process_measurement: user={message.from_user.id}, invalid {measurement_type}={value}")
+        await message.answer(get_validation_error(config['error_msg']))
+        return
+    
+    await state.update_data(**{measurement_type: float(value)})
+    logging.info(f"process_measurement: user={message.from_user.id}, {measurement_type} accepted={value}")
+    await message.answer(f"✅ {measurement_type.title()}: {value} см")
+    
+    # Переходим к следующему измерению
+    await ask_measurement(message, state, config['next'])
+
+# Специальные обработчики для измерений, которые не подходят под универсальный шаблон
+async def ask_sleep_hours(message: types.Message, state: FSMContext):
+    """Запросить часы сна"""
+    logging.info(f"ask_sleep_hours: user={message.from_user.id}")
+    await message.answer(get_sleep_request())
+    await MeasurementsStates.sleep_hours.set()
+
+async def process_sleep_hours(message: types.Message, state: FSMContext):
+    """Обработать часы сна"""
+    sleep = message.text.strip()
+    logging.info(f"process_sleep_hours: user={message.from_user.id}, sleep={sleep}")
+    if not validate_sleep_hours(sleep):
+        logging.warning(f"process_sleep_hours: user={message.from_user.id}, invalid sleep={sleep}")
+        await message.answer(get_validation_error("Часы сна должны быть числом от 4 до 12 часов"))
+        return
+    await state.update_data(sleep_hours=float(sleep))
+    logging.info(f"process_sleep_hours: user={message.from_user.id}, sleep accepted={sleep}")
+    await message.answer(f"✅ Часы сна: {sleep} часов")
+    await ask_stress_level(message, state)
+
+async def ask_stress_level(message: types.Message, state: FSMContext):
+    """Запросить уровень стресса"""
+    logging.info(f"ask_stress_level: user={message.from_user.id}")
+    await message.answer(get_stress_request(), reply_markup=get_stress_keyboard())
+    await MeasurementsStates.stress_level.set()
+
+async def process_stress_level(callback: types.CallbackQuery, state: FSMContext):
+    """Обработать уровень стресса"""
+    stress_level = callback.data.split('_')[1]  # stress_low -> low
+    logging.info(f"process_stress_level: user={callback.from_user.id}, stress_level={stress_level}")
+    
+    stress_names = {
+        'low': 'Низкий',
+        'medium': 'Средний',
+        'high': 'Высокий'
+    }
+    
+    await state.update_data(stress_level=stress_level)
+    await callback.answer()
+    await callback.message.edit_text(f"✅ Уровень стресса: {stress_names.get(stress_level, stress_level)}")
+    await ask_weight_measurement(callback.message, state)
 
 async def ask_weight_measurement(message: types.Message, state: FSMContext):
     """Запросить измерение веса"""
     logging.info(f"ask_weight_measurement: user={message.from_user.id}")
-    await message.answer("⚖️ Какой у вас текущий вес?\n\nВведите вес в килограммах (например: 70.5)")
+    await message.answer(get_weight_request())
     await MeasurementsStates.weight.set()
 
 async def process_weight_measurement(message: types.Message, state: FSMContext):
     """Обработать измерение веса"""
     weight = message.text.strip()
     logging.info(f"process_weight_measurement: user={message.from_user.id}, weight={weight}")
-    from utils.validators import validate_weight
-    
     if not validate_weight(weight):
         logging.warning(f"process_weight_measurement: user={message.from_user.id}, invalid weight={weight}")
         await message.answer(get_validation_error("Вес должен быть числом от 30 до 300 кг"))
         return
-    
     await state.update_data(weight=float(weight))
     logging.info(f"process_weight_measurement: user={message.from_user.id}, weight accepted={weight}")
     await message.answer(f"✅ Вес: {weight} кг")
@@ -126,13 +232,24 @@ async def ask_steps_measurement(message: types.Message, state: FSMContext):
     await MeasurementsStates.steps.set()
 
 async def process_steps_measurement(callback: types.CallbackQuery, state: FSMContext):
-    """Обработать выбор шагов"""
-    await callback.answer()
-    steps = callback.data.split('_')[1]  # steps_8000-10000 -> 8000-10000
-    logging.info(f"process_steps_measurement: user={callback.from_user.id}, steps={steps}")
+    """Обработать количество шагов"""
+    steps_data = callback.data.split('_')[1]  # steps_8000_10000 -> 8000_10000
+    logging.info(f"process_steps_measurement: user={callback.from_user.id}, steps_data={steps_data}")
+    
+    # Преобразуем callback_data в steps
+    steps_mapping = {
+        '0_3000': '0-3000',
+        '3000_5000': '3000-5000',
+        '5000_8000': '5000-8000',
+        '8000_10000': '8000-10000',
+        '10000_plus': '10000+'
+    }
+    
+    steps = steps_mapping.get(steps_data, '8000-10000')
     
     await state.update_data(steps=steps)
-    await callback.message.edit_text(f"{callback.message.text}\n\n✅ Выбрано: {steps} шагов")
+    await callback.answer()
+    await callback.message.edit_text(f"✅ Шаги: {steps}")
     await ask_sport_type_measurement(callback.message, state)
 
 async def ask_sport_type_measurement(message: types.Message, state: FSMContext):
@@ -144,12 +261,10 @@ async def ask_sport_type_measurement(message: types.Message, state: FSMContext):
     await MeasurementsStates.sport_type.set()
 
 async def process_sport_type_measurement(callback: types.CallbackQuery, state: FSMContext):
-    """Обработать выбор типа спорта"""
-    await callback.answer()
-    sport_type = callback.data.split('_')[1]  # sport_running -> running
+    """Обработать тип спорта"""
+    sport_type = callback.data.split('_')[1]  # sport_walking -> walking
     logging.info(f"process_sport_type_measurement: user={callback.from_user.id}, sport_type={sport_type}")
     
-    # Форматируем название спорта для отображения
     sport_names = {
         'none': '❌ Не занимаюсь',
         'walking': '🚶 Ходьба/Прогулки',
@@ -161,10 +276,9 @@ async def process_sport_type_measurement(callback: types.CallbackQuery, state: F
         'team': '⚽ Футбол/Баскетбол'
     }
     
-    sport_text = sport_names.get(sport_type, sport_type)
-    
     await state.update_data(sport_type=sport_type)
-    await callback.message.edit_text(f"{callback.message.text}\n\n✅ Выбрано: {sport_text}")
+    await callback.answer()
+    await callback.message.edit_text(f"✅ Спорт: {sport_names.get(sport_type, sport_type)}")
     await ask_sport_freq_measurement(callback.message, state)
 
 async def ask_sport_freq_measurement(message: types.Message, state: FSMContext):
@@ -176,12 +290,20 @@ async def ask_sport_freq_measurement(message: types.Message, state: FSMContext):
     await MeasurementsStates.sport_freq.set()
 
 async def process_sport_freq_measurement(callback: types.CallbackQuery, state: FSMContext):
-    """Обработать выбор частоты спорта"""
-    await callback.answer()
-    sport_freq = callback.data.split('_')[1]  # freq_3 -> 3
-    logging.info(f"process_sport_freq_measurement: user={callback.from_user.id}, sport_freq={sport_freq}")
+    """Обработать частоту спорта"""
+    freq_data = callback.data.split('_')[1]  # freq_1_2 -> 1_2
+    logging.info(f"process_sport_freq_measurement: user={callback.from_user.id}, freq_data={freq_data}")
     
-    # Форматируем частоту тренировок
+    # Преобразуем callback_data в sport_freq
+    freq_mapping = {
+        '1_2': '2',  # 1-2 раза -> 2 раза
+        '3_4': '4',  # 3-4 раза -> 4 раза  
+        '5_6': '5',  # 5-6 раз -> 5 раз
+        'daily': '6'  # Ежедневно -> 6 раз
+    }
+    
+    sport_freq = freq_mapping.get(freq_data, '0')
+    
     freq_names = {
         '0': '0 раз в неделю',
         '1': '1 раз в неделю',
@@ -193,10 +315,9 @@ async def process_sport_freq_measurement(callback: types.CallbackQuery, state: F
         'daily': 'Ежедневно'
     }
     
-    freq_text = freq_names.get(sport_freq, f"{sport_freq} раз в неделю")
-    
     await state.update_data(sport_freq=sport_freq)
-    await callback.message.edit_text(f"{callback.message.text}\n\n✅ Выбрано: {freq_text}")
+    await callback.answer()
+    await callback.message.edit_text(f"✅ Частота: {freq_names.get(sport_freq, f'{sport_freq} раз в неделю')}")
     await finish_measurements(callback.message, state)
 
 async def finish_measurements(message: types.Message, state: FSMContext):
@@ -254,11 +375,9 @@ async def finish_measurements(message: types.Message, state: FSMContext):
             return
     
     # Получаем последнюю запись для получения роста и других данных
-    from crud.record_crud import get_latest_record, get_user_records
     latest_record = get_latest_record(db, user_id)
     
     # Рассчитываем множитель шагов
-    from utils.calculations import calculate_step_multiplier
     step_multiplier = calculate_step_multiplier(measurements_data.get('steps', '8000-10000'))
     
     # Рассчитываем процент жира ДО сохранения записи
@@ -268,12 +387,32 @@ async def finish_measurements(message: types.Message, state: FSMContext):
         'weight': measurements_data['weight'],
         'waist': measurements_data['waist'],
         'neck': measurements_data['neck'],
-        'hip': measurements_data.get('hip')
+        'hip': measurements_data.get('hip'),
+        'chest': measurements_data.get('chest'),
+        'bicep': measurements_data.get('bicep'),
+        'thigh': measurements_data.get('thigh'),
+        'wrist': measurements_data.get('wrist'),
+        'calf': measurements_data.get('calf'),
+        'forearm': measurements_data.get('forearm'),
+        'abdomen': measurements_data.get('abdomen'),
+        'sleep_hours': measurements_data.get('sleep_hours', 7.0),
+        'stress_level': measurements_data.get('stress_level', 'medium'),
+        'sport_type': measurements_data.get('sport_type', 'none'),
+        'sport_freq': measurements_data.get('sport_freq', '0')
     }
     
-    bodyfat = calculate_bodyfat(user_data)
+    bodyfat = calculate_bodyfat_precise(user_data)
     
-    # Создаем новую запись со всеми данными, включая правильный bodyfat
+    # Рассчитываем комплексные метрики
+    comprehensive_metrics = calculate_comprehensive_metrics(user_data, bodyfat)
+    
+    # Проверяем безопасность
+    safety_data = safety_checks(user_data, comprehensive_metrics)
+    
+    # Получаем адаптивные рекомендации
+    adaptive_data = get_adaptive_recommendations(user_data, comprehensive_metrics)
+    
+    # Создаем новую запись со всеми данными
     record_result = create_or_update_record(
         db,
         user_id,
@@ -282,13 +421,30 @@ async def finish_measurements(message: types.Message, state: FSMContext):
         waist=measurements_data['waist'],
         neck=measurements_data['neck'],
         hip=measurements_data.get('hip'),
+        chest=measurements_data.get('chest'),
+        bicep=measurements_data.get('bicep'),
+        thigh=measurements_data.get('thigh'),
+        wrist=measurements_data.get('wrist'),
+        calf=measurements_data.get('calf'),
+        forearm=measurements_data.get('forearm'),
+        abdomen=measurements_data.get('abdomen'),
+        sleep_hours=measurements_data.get('sleep_hours', 7.0),
+        stress_level=measurements_data.get('stress_level', 'medium'),
         steps=measurements_data.get('steps', '8000-10000'),
         sport_type=measurements_data.get('sport_type', 'none'),
         sport_freq=measurements_data.get('sport_freq', '0'),
         step_multiplier=step_multiplier,
         height=latest_record.height if latest_record else 170,
         goal=latest_record.goal if latest_record else 'maintain',
-        bodyfat=bodyfat  # Сохраняем правильный процент жира
+        bodyfat=bodyfat,
+        bmi=comprehensive_metrics['basic_metrics']['bmi'] if comprehensive_metrics else None,
+        lbm=comprehensive_metrics['basic_metrics']['lbm'] if comprehensive_metrics else None,
+        whr=comprehensive_metrics['basic_metrics']['whr'] if comprehensive_metrics else None,
+        bmr=comprehensive_metrics['metabolic_metrics']['bmr'] if comprehensive_metrics else None,
+        tdee=comprehensive_metrics['metabolic_metrics']['tdee'] if comprehensive_metrics else None,
+        metabolic_age=comprehensive_metrics['metabolic_metrics']['metabolic_age'] if comprehensive_metrics else None,
+        body_type=comprehensive_metrics['classifications']['body_type'] if comprehensive_metrics else None,
+        bodyfat_category=comprehensive_metrics['classifications']['bodyfat_category'] if comprehensive_metrics else None
     )
     
     if not record_result:
@@ -326,7 +482,7 @@ async def finish_measurements(message: types.Message, state: FSMContext):
         'daily': 'Ежедневно'
     }
     
-    # Показываем результаты
+    # Показываем основные результаты
     text = f"""✅ **Новые замеры сохранены!**
 
 📊 **Ваши измерения:**
@@ -337,6 +493,27 @@ async def finish_measurements(message: types.Message, state: FSMContext):
     if measurements_data.get('hip'):
         text += f"\n• Бёдра: {measurements_data['hip']} см"
     
+    if measurements_data.get('chest'):
+        text += f"\n• Грудь: {measurements_data['chest']} см"
+    
+    if measurements_data.get('bicep'):
+        text += f"\n• Плечо: {measurements_data['bicep']} см"
+    
+    if measurements_data.get('thigh'):
+        text += f"\n• Бедро: {measurements_data['thigh']} см"
+    
+    if measurements_data.get('wrist'):
+        text += f"\n• Запястье: {measurements_data['wrist']} см"
+    
+    if measurements_data.get('calf'):
+        text += f"\n• Голень: {measurements_data['calf']} см"
+    
+    if measurements_data.get('forearm'):
+        text += f"\n• Предплечье: {measurements_data['forearm']} см"
+    
+    if measurements_data.get('abdomen'):
+        text += f"\n• Живот: {measurements_data['abdomen']} см"
+    
     text += f"""
 
 🏃‍♂️ **Активность:**
@@ -344,9 +521,43 @@ async def finish_measurements(message: types.Message, state: FSMContext):
 • Спорт: {sport_names.get(measurements_data.get('sport_type', 'none'), 'Не указано')}
 • Частота: {freq_names.get(measurements_data.get('sport_freq', '0'), f"{measurements_data.get('sport_freq', '0')} раз в неделю")}
 
+😴 **Образ жизни:**
+• Сон: {measurements_data.get('sleep_hours', 7.0)} часов
+• Стресс: {measurements_data.get('stress_level', 'medium')}
+
 🔥 **Процент жира:** {bodyfat:.1f}%"""
-    
+
     await message.answer(text, parse_mode='Markdown')
+    
+    # Показываем комплексные метрики
+    if comprehensive_metrics:
+        await message.answer(
+            get_comprehensive_metrics_text(comprehensive_metrics),
+            parse_mode='Markdown'
+        )
+        
+        # Показываем анализ метаболизма
+        await message.answer(
+            get_metabolic_analysis_text(comprehensive_metrics),
+            parse_mode='Markdown'
+        )
+        
+        # Показываем анализ состава тела
+        await message.answer(
+            get_body_composition_text(comprehensive_metrics),
+            parse_mode='Markdown'
+        )
+    
+    # Показываем адаптивные рекомендации
+    await message.answer(
+        get_adaptive_recommendations_text(adaptive_data),
+        parse_mode='Markdown'
+    )
+    
+    # Показываем предупреждения безопасности
+    safety_text = get_safety_warnings_text(safety_data)
+    if safety_text:
+        await message.answer(safety_text, parse_mode='Markdown')
     
     # Показываем мотивирующее сообщение, если есть прогресс
     if len(all_records) >= 2:
@@ -359,12 +570,21 @@ async def finish_measurements(message: types.Message, state: FSMContext):
 def register_measurements_handlers(dp: Dispatcher):
     """Регистрация обработчиков измерений"""
     dp.register_message_handler(start_new_measurements, text="📝 Новые замеры")
-    dp.register_message_handler(process_waist_measurement, state=MeasurementsStates.waist)
-    dp.register_message_handler(process_neck_measurement, state=MeasurementsStates.neck)
-    dp.register_message_handler(process_hip_measurement, state=MeasurementsStates.hip)
+    
+    # Регистрируем универсальные обработчики для всех измерений
+    for measurement_type in MEASUREMENT_CONFIG.keys():
+        config = MEASUREMENT_CONFIG[measurement_type]
+        dp.register_message_handler(
+            lambda msg, state, mt=measurement_type: process_measurement(msg, state, mt),
+            state=config['state']
+        )
+    
+    # Специальные обработчики
+    dp.register_message_handler(process_sleep_hours, state=MeasurementsStates.sleep_hours)
     dp.register_message_handler(process_weight_measurement, state=MeasurementsStates.weight)
     
-    # Обработчики для callback (шаги и спорт)
+    # Обработчики для callback (шаги, спорт, стресс)
     dp.register_callback_query_handler(process_steps_measurement, lambda c: c.data.startswith('steps_'), state=MeasurementsStates.steps)
     dp.register_callback_query_handler(process_sport_type_measurement, lambda c: c.data.startswith('sport_'), state=MeasurementsStates.sport_type)
-    dp.register_callback_query_handler(process_sport_freq_measurement, lambda c: c.data.startswith('freq_'), state=MeasurementsStates.sport_freq) 
+    dp.register_callback_query_handler(process_sport_freq_measurement, lambda c: c.data.startswith('freq_'), state=MeasurementsStates.sport_freq)
+    dp.register_callback_query_handler(process_stress_level, lambda c: c.data.startswith('stress_'), state=MeasurementsStates.stress_level) 

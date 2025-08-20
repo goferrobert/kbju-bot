@@ -1,72 +1,90 @@
-# 🛠️ Инструкция по установке и настройке
+# 🚀 Подробная инструкция по установке KBJU Bot
 
-> **Версия:** DEV (Development)  
-> **Дата обновления:** 28.07.2025
+Полное руководство по установке, настройке и запуску Telegram бота для расчета КБЖУ и процента жира.
 
-## 📋 Обзор
+## 📋 Предварительные требования
 
-Данная инструкция описывает процесс установки и настройки KBJU Bot в DEV версии. Проект готовится к разделению на DEV и PROD версии с разными токенами и архитектурами.
+### **Системные требования:**
+- **ОС:** Windows 10+, macOS 10.14+, Ubuntu 18.04+
+- **Python:** 3.8 или выше
+- **RAM:** Минимум 512MB
+- **Диск:** 100MB свободного места
+- **Интернет:** Стабильное подключение
 
-## 🏗️ Архитектура
+### **Необходимые инструменты:**
+- **Git** - для клонирования репозитория
+- **Python pip** - для установки зависимостей
+- **Текстовый редактор** - VS Code, PyCharm, или любой другой
 
-### Текущая версия (DEV)
-- **Фреймворк:** aiogram 2.x
-- **База данных:** SQLite
-- **Деплой:** Локальный сервер
-- **Токен:** DEV токен для тестирования
+## 🔧 Пошаговая установка
 
-## 🚀 Установка DEV версии
+### **Шаг 1: Подготовка системы**
 
-### 1. Подготовка системы
-
-#### Требования
-- **Python:** 3.10 или выше
-- **Git:** для клонирования репозитория
-- **Telegram Bot Token:** DEV токен для тестирования
-
-#### Проверка Python
+#### Windows:
 ```bash
+# Проверка версии Python
 python --version
-# Должно быть: Python 3.10.x или выше
+
+# Установка Git (если не установлен)
+# Скачайте с https://git-scm.com/download/win
+
+# Создание рабочей папки
+mkdir C:\Projects
+cd C:\Projects
 ```
 
-### 2. Клонирование репозитория
+#### macOS/Linux:
+```bash
+# Проверка версии Python
+python3 --version
+
+# Установка Git (если не установлен)
+# macOS: brew install git
+# Ubuntu: sudo apt install git
+
+# Создание рабочей папки
+mkdir ~/Projects
+cd ~/Projects
+```
+
+### **Шаг 2: Клонирование репозитория**
 
 ```bash
-# Клонируйте репозиторий
-git clone https://github.com/goferrobert/kbju-bot.git
+# Клонирование проекта
+git clone <repository-url> Telegram
+cd Telegram
 
-# Перейдите в папку проекта
-cd kbju-bot
-
-# Переключитесь на ветку dev
-git checkout dev
+# Проверка структуры проекта
+ls -la
 ```
 
-### 3. Создание виртуального окружения
+### **Шаг 3: Создание виртуального окружения**
 
-#### Windows
+#### Windows:
 ```bash
 # Создание виртуального окружения
 python -m venv .venv
 
-# Активация (PowerShell)
-.venv\Scripts\Activate.ps1
+# Активация виртуального окружения
+.venv\Scripts\activate
 
-# Активация (Command Prompt)
-.venv\Scripts\activate.bat
+# Проверка активации (должен показать путь к .venv)
+where python
 ```
 
-#### Linux/Mac
+#### macOS/Linux:
 ```bash
 # Создание виртуального окружения
-python -m venv .venv
+python3 -m venv .venv
 
-# Активация
+# Активация виртуального окружения
 source .venv/bin/activate
+
+# Проверка активации (должен показать путь к .venv)
+which python
 ```
 
-### 4. Установка зависимостей
+### **Шаг 4: Установка зависимостей**
 
 ```bash
 # Обновление pip
@@ -74,230 +92,325 @@ pip install --upgrade pip
 
 # Установка зависимостей
 pip install -r requirements.txt
+
+# Проверка установки
+pip list
 ```
 
-### 5. Настройка переменных окружения
+### **Шаг 5: Настройка конфигурации**
 
-#### Создание файла .env
 ```bash
-# Создайте файл .env в корне проекта
-touch .env  # Linux/Mac
-# или
-echo. > .env  # Windows
+# Копирование примера конфигурации
+cp env.example .env
+
+# Редактирование конфигурации
+# Windows: notepad .env
+# macOS: open -e .env
+# Linux: nano .env
 ```
 
-#### Содержимое файла .env
-```bash
-# DEV токен для тестирования
-BOT_TOKEN=ваш_dev_токен_бота
+#### Содержимое файла .env:
+```env
+# Токен вашего Telegram бота
+BOT_TOKEN=your_telegram_bot_token_here
+
+# URL базы данных (SQLite по умолчанию)
+DATABASE_URL=sqlite:///kbju_bot.db
+
+# Уровень логирования (DEBUG, INFO, WARNING, ERROR)
+LOG_LEVEL=INFO
 
 # Дополнительные настройки (опционально)
-LOG_LEVEL=INFO
-DEBUG_MODE=true
+# ADMIN_USER_ID=your_telegram_id
+# DEBUG_MODE=False
 ```
 
-### 6. Получение токена бота
+### **Шаг 6: Получение токена бота**
 
-#### Создание бота в Telegram
-1. Найдите @BotFather в Telegram
-2. Отправьте команду `/newbot`
-3. Следуйте инструкциям для создания бота
-4. Сохраните полученный токен
+1. **Откройте Telegram** и найдите @BotFather
+2. **Отправьте команду** `/newbot`
+3. **Введите имя бота** (например: "My KBJU Bot")
+4. **Введите username** (например: "my_kbju_bot")
+5. **Скопируйте токен** и вставьте в файл .env
 
-#### Рекомендации для DEV
-- Создайте отдельного бота для тестирования
-- Используйте префикс "DEV_" в имени бота
-- Не используйте продакшен токен для разработки
+### **Шаг 7: Инициализация базы данных**
 
-## 🔧 Настройка базы данных
-
-### Автоматическая инициализация
-База данных создается автоматически при первом запуске бота.
-
-### Ручная инициализация (опционально)
 ```bash
-# Запуск скрипта инициализации
+# Создание базы данных и таблиц
+python scripts/init_database.py
+
+# Проверка создания файла БД
+ls -la *.db
+```
+
+### **Шаг 8: Тестирование установки**
+
+```bash
+# Проверка синтаксиса основного файла
+python -m py_compile main.py
+
+# Проверка импорта модулей
+python -c "import handlers.measurements_handlers; print('OK')"
+python -c "import utils.calculations; print('OK')"
+python -c "import utils.validators; print('OK')"
+
+# Создание тестовых данных (опционально)
 python scripts/create_test_data.py
-```
-
-### Очистка данных
-```bash
-# Очистка тестовых данных
-python scripts/clear_test_data.py
-
-# Полная очистка БД (Windows)
-clear_db_simple.bat
 ```
 
 ## 🚀 Запуск бота
 
-### Первый запуск
+### **Первый запуск:**
+
 ```bash
-# Активируйте виртуальное окружение
-.venv\Scripts\activate  # Windows
-source .venv/bin/activate  # Linux/Mac
+# Убедитесь, что виртуальное окружение активировано
+# Windows: .venv\Scripts\activate
+# macOS/Linux: source .venv/bin/activate
 
-# Запустите бота
-python main.py
-```
-
-### Проверка работы
-1. Найдите вашего бота в Telegram
-2. Отправьте команду `/start`
-3. Проверьте, что бот отвечает
-
-### Автоматический запуск (Windows)
-```bash
-# Используйте bat-файл для запуска
-start_bot.bat
-```
-
-## 📊 Мониторинг и логи
-
-### Просмотр логов
-```bash
-# Просмотр логов в реальном времени
-tail -f bot.log  # Linux/Mac
-# или
-Get-Content bot.log -Wait  # Windows PowerShell
-```
-
-### Уровни логирования
-- **INFO:** Обычные операции
-- **WARNING:** Предупреждения
-- **ERROR:** Ошибки
-
-### Ротация логов
-Логи автоматически ротируются при достижении определенного размера.
-
-## 🛠️ Разработка
-
-### Структура проекта
-```
-Telegram/
-├── handlers/          # Обработчики сообщений
-├── utils/            # Утилиты и расчеты
-├── crud/             # Операции с базой данных
-├── models/           # Модели данных
-├── states/           # Состояния FSM
-├── scripts/          # Скрипты для разработки
-└── data/             # Данные и файлы
-```
-
-### Основные команды разработки
-```bash
 # Запуск бота
 python main.py
+```
 
+### **Проверка работы:**
+
+1. **Откройте Telegram** и найдите вашего бота
+2. **Отправьте команду** `/start`
+3. **Следуйте инструкциям** для регистрации
+4. **Проверьте все функции** бота
+
+### **Остановка бота:**
+
+```bash
+# Нажмите Ctrl+C в терминале
+# Или закройте терминал
+```
+
+## 🔧 Настройка для разработки
+
+### **Структура проекта для разработчиков:**
+
+```
+Telegram/
+├── handlers/                 # Обработчики Telegram сообщений
+│   ├── measurements_handlers.py  # ✅ Оптимизировано (350 строк)
+│   ├── user_info_handlers.py     # Обработчики пользовательской информации
+│   ├── food_handlers.py          # Обработчики питания
+│   ├── menu_handlers.py          # Обработчики меню
+│   └── start_handlers.py         # Обработчики старта
+├── utils/                   # Утилиты и вспомогательные функции
+│   ├── calculations.py      # ✅ Математические расчеты (666 строк)
+│   ├── texts.py            # ✅ Оптимизировано (400 строк)
+│   ├── validators.py       # ✅ Оптимизировано (180 строк)
+│   ├── buttons.py          # Клавиатуры и кнопки
+│   └── progress.py         # Анализ прогресса
+├── models/                 # Модели базы данных
+│   ├── database.py         # Настройки подключения
+│   └── tables.py           # Определения таблиц
+├── crud/                   # Операции с базой данных
+│   ├── user_crud.py        # CRUD для пользователей
+│   ├── record_crud.py      # CRUD для записей измерений
+│   └── food_crud.py        # CRUD для питания
+├── states/                 # Состояния FSM
+│   └── fsm_states.py       # Определения состояний
+├── scripts/                # Скрипты для управления
+│   ├── init_database.py    # Инициализация БД
+│   ├── migrate_database.py # Миграции БД
+│   ├── create_test_data.py # Создание тестовых данных
+│   └── clear_test_data.py  # Очистка тестовых данных
+├── main.py                 # Главный файл бота
+├── config.py               # Конфигурация
+└── requirements.txt        # Зависимости
+```
+
+### **Команды для разработки:**
+
+```bash
 # Создание тестовых данных
 python scripts/create_test_data.py
 
 # Очистка тестовых данных
 python scripts/clear_test_data.py
 
-# Проверка синтаксиса
-python -m py_compile main.py
+# Проверка синтаксиса всех файлов
+find . -name "*.py" -exec python -m py_compile {} \;
+
+# Запуск с отладкой
+python -u main.py
+
+# Проверка импортов
+python -c "import sys; sys.path.append('.'); import handlers, utils, models, crud; print('All modules imported successfully')"
 ```
 
-### Отладка
-```bash
-# Запуск с подробными логами
-python main.py --debug
+## 🛠️ Устранение неполадок
 
-# Проверка конфигурации
-python -c "import config; print(config.__dict__)"
+### **Частые проблемы:**
+
+#### **1. Ошибка "ModuleNotFoundError":**
+```bash
+# Решение: Активируйте виртуальное окружение
+# Windows: .venv\Scripts\activate
+# macOS/Linux: source .venv/bin/activate
+```
+
+#### **2. Ошибка "No module named 'aiogram'":**
+```bash
+# Решение: Установите зависимости
+pip install -r requirements.txt
+```
+
+#### **3. Ошибка "Invalid token":**
+```bash
+# Решение: Проверьте токен в файле .env
+# Убедитесь, что токен скопирован полностью
+```
+
+#### **4. Ошибка "Database locked":**
+```bash
+# Решение: Закройте все процессы Python
+# Windows: taskkill /f /im python.exe
+# macOS/Linux: pkill python
+```
+
+#### **5. Ошибка "Permission denied":**
+```bash
+# Решение: Проверьте права доступа к папке
+# Windows: Запустите от имени администратора
+# macOS/Linux: chmod +x main.py
+```
+
+### **Проверка логов:**
+
+```bash
+# Просмотр логов в реальном времени
+# Windows: Get-Content bot.log -Wait
+# macOS/Linux: tail -f bot.log
+
+# Поиск ошибок в логах
+grep -i error bot.log
+grep -i exception bot.log
 ```
 
 ## 🔒 Безопасность
 
-### Переменные окружения
-- Никогда не коммитьте файл `.env` в Git
-- Используйте разные токены для DEV и PROD
-- Регулярно обновляйте токены
+### **Рекомендации по безопасности:**
 
-### База данных
-- Регулярно создавайте резервные копии
-- Не используйте продакшен данные в DEV
-- Ограничьте доступ к файлу базы данных
+1. **Никогда не публикуйте токен** в публичных репозиториях
+2. **Используйте .env файл** для хранения секретов
+3. **Регулярно обновляйте зависимости** для исправления уязвимостей
+4. **Ограничьте доступ** к серверу с ботом
+5. **Настройте бэкапы** базы данных
 
-## 📈 Производительность
+### **Настройка файрвола:**
 
-### Оптимизация для DEV
-- Используйте SQLite для быстрой разработки
-- Включите подробное логирование
-- Используйте небольшие объемы тестовых данных
-
-### Мониторинг ресурсов
 ```bash
-# Проверка использования памяти
-ps aux | grep python  # Linux/Mac
-# или
-Get-Process python  # Windows
+# Ограничение доступа к портам (если используется веб-хук)
+# Windows: netsh advfirewall firewall add rule name="Telegram Bot" dir=in action=allow protocol=TCP localport=8443
+# macOS/Linux: ufw allow 8443
 ```
 
-## 🐛 Устранение неполадок
+## 📊 Мониторинг и обслуживание
 
-### Частые проблемы
+### **Автоматический запуск:**
 
-#### 1. Ошибка "ModuleNotFoundError"
-```bash
-# Решение: активируйте виртуальное окружение
-.venv\Scripts\activate  # Windows
-source .venv/bin/activate  # Linux/Mac
+#### Windows (Task Scheduler):
+```batch
+@echo off
+cd /d C:\Projects\Telegram
+call .venv\Scripts\activate
+python main.py
 ```
 
-#### 2. Ошибка "No module named 'aiogram'"
-```bash
-# Решение: установите зависимости
-pip install -r requirements.txt
+#### macOS/Linux (systemd):
+```ini
+[Unit]
+Description=KBJU Bot
+After=network.target
+
+[Service]
+Type=simple
+User=your_username
+WorkingDirectory=/home/your_username/Projects/Telegram
+Environment=PATH=/home/your_username/Projects/Telegram/.venv/bin
+ExecStart=/home/your_username/Projects/Telegram/.venv/bin/python main.py
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
 ```
 
-#### 3. Ошибка "BOT_TOKEN not found"
+### **Бэкапы базы данных:**
+
 ```bash
-# Решение: создайте файл .env
-echo BOT_TOKEN=ваш_токен > .env
+# Создание бэкапа
+cp kbju_bot.db kbju_bot_backup_$(date +%Y%m%d_%H%M%S).db
+
+# Автоматический бэкап (cron)
+# 0 2 * * * cp /path/to/kbju_bot.db /backup/kbju_bot_$(date +\%Y\%m\%d).db
 ```
 
-#### 4. Ошибка "Database is locked"
+### **Обновление бота:**
+
 ```bash
-# Решение: остановите все процессы Python
-taskkill /f /im python.exe  # Windows
-pkill python  # Linux/Mac
-```
+# Остановка бота
+# Ctrl+C или systemctl stop kbju-bot
 
-### Логи ошибок
-Проверьте файл `bot.log` для получения подробной информации об ошибках.
-
-## 🔄 Обновления
-
-### Обновление кода
-```bash
-# Получение последних изменений
-git pull origin dev
+# Обновление кода
+git pull origin main
 
 # Обновление зависимостей
-pip install -r requirements.txt --upgrade
+pip install -r requirements.txt
+
+# Перезапуск бота
+python main.py
 ```
 
-### Обновление базы данных
-При изменении схемы базы данных:
-1. Создайте резервную копию
-2. Обновите модели в `models/tables.py`
-3. Запустите миграцию
+## 🎯 Оптимизация производительности
 
-## 📝 Документация
+### **Настройки для высоких нагрузок:**
 
-### Дополнительные материалы
-- **[README.md](README.md)** - Общий обзор проекта
-- **[SCENARIOS.md](SCENARIOS.md)** - Описание сценариев использования
-- **[CLEANUP_REPORT.md](CLEANUP_REPORT.md)** - Отчет об очистке проекта
+```python
+# config.py
+import os
 
-### Полезные ссылки
-- [aiogram Documentation](https://docs.aiogram.dev/)
-- [SQLAlchemy Documentation](https://docs.sqlalchemy.org/)
-- [Python Telegram Bot](https://python-telegram-bot.readthedocs.io/)
+# Настройки для высоких нагрузок
+MAX_CONNECTIONS = 100
+POOL_SIZE = 20
+MAX_OVERFLOW = 30
+
+# Настройки логирования
+LOG_LEVEL = os.getenv('LOG_LEVEL', 'INFO')
+LOG_FORMAT = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+```
+
+### **Мониторинг ресурсов:**
+
+```bash
+# Мониторинг использования памяти
+# Windows: tasklist /fi "imagename eq python.exe"
+# macOS/Linux: ps aux | grep python
+
+# Мониторинг дискового пространства
+df -h
+
+# Мониторинг логов
+tail -f bot.log | grep -E "(ERROR|WARNING)"
+```
+
+## 📚 Дополнительные ресурсы
+
+### **Полезные ссылки:**
+- [aiogram документация](https://docs.aiogram.dev/)
+- [SQLAlchemy документация](https://docs.sqlalchemy.org/)
+- [Telegram Bot API](https://core.telegram.org/bots/api)
+
+### **Сообщество:**
+- [GitHub Issues](https://github.com/your-repo/issues)
+- [Telegram поддержка](https://t.me/dryuzefovna)
+- [Discussions](https://github.com/your-repo/discussions)
 
 ---
 
-**Версия:** DEV v1.0.0  
-**Статус:** Активная разработка 
+**🎉 Поздравляем! Ваш KBJU Bot успешно установлен и готов к работе!**
+
+**📞 Если у вас возникли вопросы, обратитесь к разделу "Устранение неполадок" или свяжитесь с поддержкой.** 

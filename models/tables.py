@@ -21,18 +21,47 @@ class UserRecord(Base):
     id = Column(Integer, primary_key=True, index=True)
     telegram_id = Column(Integer, ForeignKey("users.telegram_id"))
     date = Column(Date)
+    
+    # Основные замеры
     weight = Column(Float)
+    height = Column(Integer)
     waist = Column(Float)
     neck = Column(Float)
     hip = Column(Float)  # только у женщин
-    # Динамические и расчетные параметры:
-    height = Column(Integer)
-    goal = Column(String)
+    
+    # Дополнительные замеры для точности
+    chest = Column(Float)  # обхват груди
+    bicep = Column(Float)  # обхват плеча
+    thigh = Column(Float)  # обхват бедра
+    wrist = Column(Float)  # обхват запястья
+    calf = Column(Float)   # обхват голени
+    forearm = Column(Float) # обхват предплечья
+    abdomen = Column(Float) # обхват живота
+    
+    # Активность
     steps = Column(String)
     sport_type = Column(String)
     sport_freq = Column(String)
+    
+    # Образ жизни
+    sleep_hours = Column(Float)        # часы сна
+    stress_level = Column(String)      # 'low'/'medium'/'high'
+    
+    # Цель
+    goal = Column(String)
+    
+    # Расчетные параметры
     step_multiplier = Column(Float)
     bodyfat = Column(Float)
+    bmi = Column(Float)                # индекс массы тела
+    lbm = Column(Float)                # мышечная масса
+    whr = Column(Float)                # соотношение талия/бедра
+    bmr = Column(Integer)              # базовый обмен веществ
+    tdee = Column(Integer)             # общий дневной расход энергии
+    metabolic_age = Column(Integer)    # метаболический возраст
+    body_type = Column(String)         # тип телосложения
+    bodyfat_category = Column(String)  # категория жира
+    
     # Relationship
     user = relationship("User", back_populates="records")
 

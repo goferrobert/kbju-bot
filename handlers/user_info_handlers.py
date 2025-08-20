@@ -13,6 +13,7 @@ from utils.texts import (
     get_height_request, get_weight_request, get_steps_request,
     get_sport_request, get_frequency_request, get_goal_request,
     get_waist_request, get_neck_request, get_hip_request,
+    get_chest_request, get_bicep_request, get_thigh_request,
     get_validation_error, get_final_results_text, get_kbju_explanation,
     get_funnel_text_with_image, get_kbju_text
 )
@@ -269,7 +270,7 @@ async def ask_hip(message: types.Message, state: FSMContext):
         await message.answer(get_hip_request())
         await UserInfoStates.hip.set()
     else:
-        await ask_goal(message, state)
+        await ask_chest(message, state)
 
 async def process_hip(message: types.Message, state: FSMContext):
     """Обрабатываем обхват бедер"""
@@ -284,6 +285,66 @@ async def process_hip(message: types.Message, state: FSMContext):
     
     await state.update_data(hip=float(hip))
     logging.info(f"process_hip: user={message.from_user.id}, hip accepted={hip}")
+    await ask_chest(message, state)
+
+async def ask_chest(message: types.Message, state: FSMContext):
+    """Запрашиваем обхват груди"""
+    await message.answer(get_chest_request())
+    await UserInfoStates.chest.set()
+
+async def process_chest(message: types.Message, state: FSMContext):
+    """Обрабатываем обхват груди"""
+    chest = message.text.strip()
+    logging.info(f"process_chest: user={message.from_user.id}, chest={chest}")
+    from utils.validators import validate_chest_measurement
+    
+    if not validate_chest_measurement(chest):
+        logging.warning(f"process_chest: user={message.from_user.id}, invalid chest={chest}")
+        await message.answer("❌ Обхват груди должен быть числом от 60 до 150 см")
+        return
+    
+    await state.update_data(chest=float(chest))
+    logging.info(f"process_chest: user={message.from_user.id}, chest accepted={chest}")
+    await ask_bicep(message, state)
+
+async def ask_bicep(message: types.Message, state: FSMContext):
+    """Запрашиваем обхват плеча"""
+    await message.answer(get_bicep_request())
+    await UserInfoStates.bicep.set()
+
+async def process_bicep(message: types.Message, state: FSMContext):
+    """Обрабатываем обхват плеча"""
+    bicep = message.text.strip()
+    logging.info(f"process_bicep: user={message.from_user.id}, bicep={bicep}")
+    from utils.validators import validate_bicep_measurement
+    
+    if not validate_bicep_measurement(bicep):
+        logging.warning(f"process_bicep: user={message.from_user.id}, invalid bicep={bicep}")
+        await message.answer("❌ Обхват плеча должен быть числом от 20 до 60 см")
+        return
+    
+    await state.update_data(bicep=float(bicep))
+    logging.info(f"process_bicep: user={message.from_user.id}, bicep accepted={bicep}")
+    await ask_thigh(message, state)
+
+async def ask_thigh(message: types.Message, state: FSMContext):
+    """Запрашиваем обхват бедра"""
+    await message.answer(get_thigh_request())
+    await UserInfoStates.thigh.set()
+
+async def process_thigh(message: types.Message, state: FSMContext):
+    """Обрабатываем обхват бедра"""
+    thigh = message.text.strip()
+    logging.info(f"process_thigh: user={message.from_user.id}, thigh={thigh}")
+    from utils.validators import validate_thigh_measurement
+    
+    if not validate_thigh_measurement(thigh):
+        logging.warning(f"process_thigh: user={message.from_user.id}, invalid thigh={thigh}")
+        await message.answer("❌ Обхват бедра должен быть числом от 40 до 100 см")
+        return
+    
+    await state.update_data(thigh=float(thigh))
+    logging.info(f"process_thigh: user={message.from_user.id}, thigh accepted={thigh}")
     await ask_goal(message, state)
 
 async def ask_goal(message: types.Message, state: FSMContext):
@@ -329,7 +390,8 @@ async def finish_survey(user, state: FSMContext):
     user_data['step_multiplier'] = step_multiplier
 
     # Рассчитываем процент жира и КБЖУ
-    bodyfat = calculate_bodyfat(user_data)
+    from utils.calculations import calculate_bodyfat_precise
+    bodyfat = calculate_bodyfat_precise(user_data)
     user_data['bodyfat'] = bodyfat
     kbju = calculate_kbju(user_data, bodyfat)
 
@@ -370,6 +432,9 @@ async def finish_survey(user, state: FSMContext):
         waist=user_data['waist'],
         neck=user_data['neck'],
         hip=user_data.get('hip'),
+        chest=user_data.get('chest'),
+        bicep=user_data.get('bicep'),
+        thigh=user_data.get('thigh'),
         height=user_data['height'],
         goal=user_data['goal'],
         steps=user_data['steps'],
@@ -426,6 +491,9 @@ def register_user_info_handlers(dp: Dispatcher):
     dp.register_message_handler(process_waist, state=UserInfoStates.waist)
     dp.register_message_handler(process_neck, state=UserInfoStates.neck)
     dp.register_message_handler(process_hip, state=UserInfoStates.hip)
+    dp.register_message_handler(process_chest, state=UserInfoStates.chest)
+    dp.register_message_handler(process_bicep, state=UserInfoStates.bicep)
+    dp.register_message_handler(process_thigh, state=UserInfoStates.thigh)
     
     # Обработчики callback-запросов
     dp.register_callback_query_handler(process_sex_callback, text_startswith='sex_', state=UserInfoStates.sex)

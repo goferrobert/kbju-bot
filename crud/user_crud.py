@@ -50,6 +50,24 @@ def update_user(db: Session, telegram_id: int, **kwargs):
         db.rollback()
         return None
 
+def delete_user(db: Session, telegram_id: int):
+    """Удаление пользователя и всех связанных данных"""
+    logging.info(f"delete_user: telegram_id={telegram_id}")
+    try:
+        db_user = get_user(db, telegram_id)
+        if db_user:
+            db.delete(db_user)
+            db.commit()
+            logging.info(f"delete_user: deleted user id={telegram_id}")
+            return True
+        else:
+            logging.warning(f"delete_user: user not found id={telegram_id}")
+            return False
+    except Exception as e:
+        logging.error(f"delete_user error: {e}")
+        db.rollback()
+        return False
+
 def user_exists(db: Session, telegram_id: int):
     logging.info(f"user_exists: telegram_id={telegram_id}")
     try:

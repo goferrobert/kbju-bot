@@ -102,7 +102,7 @@ def validate_birthday(birthday: str) -> bool:
 def validate_height(height: str) -> bool:
     """Валидация роста"""
     try:
-        height_val = int(height.strip())
+        height_val = int(height)
         return 100 <= height_val <= 250
     except ValueError:
         return False
@@ -110,49 +110,105 @@ def validate_height(height: str) -> bool:
 def validate_weight(weight: str) -> bool:
     """Валидация веса"""
     try:
-        weight_val = float(weight.strip())
+        weight_val = float(weight.replace(',', '.'))
         return 30 <= weight_val <= 300
     except ValueError:
         return False
 
-def validate_steps(text: str) -> tuple[bool, int]:
-    """
-    Валидация шагов
-    """
-    success, value = validate_number(text, 0, 50000)
-    if success:
-        return True, int(value)
-    return False, value
+def validate_sex(sex: str) -> bool:
+    """Валидация пола"""
+    return sex in ['male', 'female']
 
-def validate_measurement(measurement: str) -> bool:
-    """Валидация обмеров (талия, шея, бедра)"""
+def validate_goal(goal: str) -> bool:
+    """Валидация цели"""
+    return goal in ['healthy', 'athletic', 'lean']
+
+def validate_sport_type(sport_type: str) -> bool:
+    """Валидация типа спорта"""
+    valid_types = ['none', 'walking', 'running', 'strength', 'yoga', 'swimming', 'cycling', 'team']
+    return sport_type in valid_types
+
+def validate_sport_freq(freq: str) -> bool:
+    """Валидация частоты спорта"""
+    valid_freqs = ['0', '1', '2', '3', '4', '5', '6', 'daily']
+    return freq in valid_freqs
+
+def validate_steps(steps: str) -> bool:
+    """Валидация количества шагов"""
+    valid_steps = ['0-3000', '3000-5000', '5000-8000', '8000-10000', '10000+']
+    return steps in valid_steps
+
+# Универсальная функция для валидации измерений
+def validate_measurement_range(value: str, min_val: float, max_val: float) -> bool:
+    """Универсальная валидация измерений в заданном диапазоне"""
     try:
-        measurement_val = float(measurement.strip())
-        # Более точные диапазоны для разных измерений
-        return 20 <= measurement_val <= 200
+        measurement_val = float(value.replace(',', '.'))
+        return min_val <= measurement_val <= max_val
     except ValueError:
         return False
 
+# Конфигурация валидаторов для измерений
+MEASUREMENT_VALIDATORS = {
+    'waist': {'min': 50, 'max': 200},
+    'neck': {'min': 20, 'max': 100},
+    'hip': {'min': 50, 'max': 200},
+    'chest': {'min': 60, 'max': 150},
+    'bicep': {'min': 20, 'max': 60},
+    'thigh': {'min': 40, 'max': 100},
+    'wrist': {'min': 15, 'max': 25},
+    'calf': {'min': 25, 'max': 50},
+    'forearm': {'min': 20, 'max': 40},
+    'abdomen': {'min': 60, 'max': 150}
+}
+
+# Универсальная функция для валидации измерений
+def validate_measurement(measurement_type: str, value: str) -> bool:
+    """Универсальная валидация измерений"""
+    config = MEASUREMENT_VALIDATORS.get(measurement_type)
+    if not config:
+        return False
+    return validate_measurement_range(value, config['min'], config['max'])
+
+# Специальные функции для обратной совместимости
 def validate_waist_measurement(measurement: str) -> bool:
-    """Валидация обхвата талии"""
-    try:
-        measurement_val = float(measurement.strip())
-        return 50 <= measurement_val <= 200
-    except ValueError:
-        return False
+    return validate_measurement('waist', measurement)
 
 def validate_neck_measurement(measurement: str) -> bool:
-    """Валидация обхвата шеи"""
+    return validate_measurement('neck', measurement)
+
+def validate_hip_measurement(measurement: str) -> bool:
+    return validate_measurement('hip', measurement)
+
+def validate_chest_measurement(measurement: str) -> bool:
+    return validate_measurement('chest', measurement)
+
+def validate_bicep_measurement(measurement: str) -> bool:
+    return validate_measurement('bicep', measurement)
+
+def validate_thigh_measurement(measurement: str) -> bool:
+    return validate_measurement('thigh', measurement)
+
+def validate_wrist_measurement(value: str) -> bool:
+    return validate_measurement('wrist', value)
+
+def validate_calf_measurement(value: str) -> bool:
+    return validate_measurement('calf', value)
+
+def validate_forearm_measurement(value: str) -> bool:
+    return validate_measurement('forearm', value)
+
+def validate_abdomen_measurement(value: str) -> bool:
+    return validate_measurement('abdomen', value)
+
+def validate_sleep_hours(sleep: str) -> bool:
+    """Валидация часов сна"""
     try:
-        measurement_val = float(measurement.strip())
-        return 20 <= measurement_val <= 100
+        sleep_val = float(sleep.replace(',', '.'))
+        return 4 <= sleep_val <= 12
     except ValueError:
         return False
 
-def validate_hip_measurement(measurement: str) -> bool:
-    """Валидация обхвата бедер"""
-    try:
-        measurement_val = float(measurement.strip())
-        return 50 <= measurement_val <= 200
-    except ValueError:
-        return False 
+def validate_stress_level(stress: str) -> bool:
+    """Валидация уровня стресса"""
+    valid_levels = ['low', 'medium', 'high']
+    return stress in valid_levels 

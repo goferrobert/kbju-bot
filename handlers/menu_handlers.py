@@ -5,7 +5,7 @@ import logging
 from utils.texts import get_main_menu_text
 from utils.buttons import get_main_menu_inline_keyboard
 from crud.user_crud import get_user
-from utils.calculations import calculate_bodyfat, calculate_kbju
+from utils.calculations import calculate_bodyfat_precise, calculate_kbju
 from utils.progress import create_progress_graph
 from models.database import SessionLocal
 from handlers.food_handlers import start_food_preferences
@@ -96,7 +96,7 @@ async def show_my_data(message: types.Message, state: FSMContext):
                 'sport_freq': latest_record.sport_freq,
                 'goal': latest_record.goal
             }
-            bodyfat = calculate_bodyfat(user_data)
+            bodyfat = calculate_bodyfat_precise(user_data)
         else:
             bodyfat = 0
         

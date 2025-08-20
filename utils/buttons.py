@@ -120,4 +120,14 @@ def get_main_menu_inline_keyboard() -> InlineKeyboardMarkup:
     keyboard.add(
         InlineKeyboardButton("💬 Консультация", callback_data="menu_consultation")
     )
+    return keyboard
+
+def get_stress_keyboard():
+    """Клавиатура для выбора уровня стресса"""
+    keyboard = InlineKeyboardMarkup(row_width=3)
+    keyboard.add(
+        InlineKeyboardButton("😌 Низкий", callback_data="stress_low"),
+        InlineKeyboardButton("😐 Средний", callback_data="stress_medium"),
+        InlineKeyboardButton("😰 Высокий", callback_data="stress_high")
+    )
     return keyboard 

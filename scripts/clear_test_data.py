@@ -1,96 +1,99 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Скрипт для очистки тестовых данных из базы данных
+Скрипт для очистки тестовых данных
+Используется для разработки и тестирования
 """
 
 import sys
 import os
-from datetime import date, timedelta
+from datetime import date
 
-# Добавляем путь к корневой папке проекта
+# Добавляем корневую папку в путь
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from models.database import SessionLocal
-from models.tables import User, UserRecord
-from crud.user_crud import get_user
+from crud.user_crud import delete_user
+from crud.record_crud import delete_user_records
 
-def clear_test_records():
-    """Удаляет тестовые записи измерений"""
+def clear_test_data():
+    """Очистка тестовых данных"""
     db = SessionLocal()
     
-    # Получаем пользователя
-    user = get_user(db, 285835433)
-    if not user:
-        print("❌ Тестовый пользователь не найден!")
-        db.close()
-        return
+    # ID тестовых пользователей
+    test_user_ids = [123456789, 987654321, 555666777]
     
-    # Удаляем записи за последние 3 месяца
-    test_dates = [
-        date.today() - timedelta(days=90),
-        date.today() - timedelta(days=60),
-        date.today() - timedelta(days=30),
-        date.today()
-    ]
+    deleted_records = 0
+    deleted_users = 0
     
-    deleted_count = 0
-    for test_date in test_dates:
-        # Находим и удаляем записи на эти даты
-        records = db.query(UserRecord).filter(
-            UserRecord.telegram_id == 285835433,
-            UserRecord.date == test_date
-        ).all()
+    for user_id in test_user_ids:
+        try:
+            # Удаляем записи пользователя
+            records_deleted = delete_user_records(db, user_id)
+            deleted_records += records_deleted
+            print(f"🗑️ Удалено записей для пользователя {user_id}: {records_deleted}")
+            
+            # Удаляем пользователя
+            if delete_user(db, user_id):
+                deleted_users += 1
+                print(f"🗑️ Удален пользователь {user_id}")
+            else:
+                print(f"⚠️ Пользователь {user_id} не найден или уже удален")
+                
+        except Exception as e:
+            print(f"❌ Ошибка при удалении данных пользователя {user_id}: {e}")
+    
+    db.close()
+    return deleted_users, deleted_records
+
+def clear_all_data():
+    """Очистка всех данных (ОПАСНО!)"""
+    db = SessionLocal()
+    
+    try:
+        # Удаляем все записи
+        db.execute("DELETE FROM user_records")
+        records_deleted = db.execute("SELECT COUNT(*) FROM user_records").scalar()
         
-        for record in records:
-            db.delete(record)
-            deleted_count += 1
-            print(f"🗑️ Удалена запись на {test_date}: вес {record.weight} кг")
-    
-    db.commit()
-    db.close()
-    print(f"\n📊 Удалено {deleted_count} записей")
-
-def clear_test_user():
-    """Удаляет тестового пользователя и все его записи"""
-    db = SessionLocal()
-    
-    # Получаем пользователя
-    user = get_user(db, 285835433)
-    if not user:
-        print("❌ Тестовый пользователь не найден!")
+        # Удаляем всех пользователей
+        db.execute("DELETE FROM users")
+        users_deleted = db.execute("SELECT COUNT(*) FROM users").scalar()
+        
+        # Удаляем предпочтения в еде
+        db.execute("DELETE FROM user_food_preferences")
+        
+        db.commit()
+        
+        print(f"🗑️ Удалено всех записей: {records_deleted}")
+        print(f"🗑️ Удалено всех пользователей: {users_deleted}")
+        print("🗑️ Удалены все предпочтения в еде")
+        
+    except Exception as e:
+        print(f"❌ Ошибка при очистке всех данных: {e}")
+        db.rollback()
+    finally:
         db.close()
-        return
-    
-    # Удаляем все записи пользователя
-    records = db.query(UserRecord).filter(UserRecord.telegram_id == 285835433).all()
-    for record in records:
-        db.delete(record)
-    
-    # Удаляем пользователя
-    db.delete(user)
-    db.commit()
-    db.close()
-    
-    print(f"🗑️ Удален тестовый пользователь и {len(records)} записей")
 
 def main():
     """Основная функция"""
     print("🧹 Очистка тестовых данных...")
-    print("=" * 50)
     
-    choice = input("Выберите действие:\n1. Удалить только тестовые записи\n2. Удалить тестового пользователя полностью\nВведите 1 или 2: ")
-    
-    if choice == "1":
-        clear_test_records()
-    elif choice == "2":
-        clear_test_user()
+    if len(sys.argv) > 1 and sys.argv[1] == "--all":
+        # Очистка всех данных
+        confirm = input("⚠️ ВНИМАНИЕ! Это удалит ВСЕ данные! Введите 'YES' для подтверждения: ")
+        if confirm == "YES":
+            clear_all_data()
+            print("✅ Все данные успешно удалены!")
+        else:
+            print("❌ Операция отменена")
+            return 1
     else:
-        print("❌ Неверный выбор!")
-        return
+        # Очистка только тестовых данных
+        deleted_users, deleted_records = clear_test_data()
+        print(f"✅ Удалено пользователей: {deleted_users}")
+        print(f"✅ Удалено записей: {deleted_records}")
     
-    print("\n" + "=" * 50)
-    print("✅ Очистка завершена!")
+    return 0
 
 if __name__ == "__main__":
-    main() 
+    exit(main())

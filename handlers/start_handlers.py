@@ -6,7 +6,7 @@ import logging
 from states.fsm_states import UserInfoStates
 from utils.texts import get_welcome_text, get_funnel_text_with_image
 from utils.buttons import get_start_keyboard, get_funnel_keyboard, get_main_menu_inline_keyboard
-from utils.calculations import calculate_bodyfat, calculate_kbju
+from utils.calculations import calculate_bodyfat_precise, calculate_kbju
 from crud.user_crud import create_user, get_user
 from utils.validators import validate_name, validate_birthday, validate_height, validate_weight, validate_measurement
 from models.database import SessionLocal
